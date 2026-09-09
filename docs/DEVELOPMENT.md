@@ -132,7 +132,18 @@ npm test
   AudioEngine` — with a fake audio backend and assert the real end-to-end
   behavior: asset binding on a win, silence when unbound, priority-conflict
   resolution, cooldown blocking, `winStreak >= 3` conditions, and mic-ducking.
-- Status today: **32 tests passing** (26 unit + 6 integration).
+- **Application-layer test** `src/domain/GameController.test.ts` drives the
+  *real* `GameController` (the same instance the UI boots) with an injected
+  fake store bridge + fake audio backend. It proves the full user workflow —
+  import music (seed store) → create rule (seed store) → GSI event via the
+  same `onRawPayload` seam the main process uses → Event → Rule → AudioEngine
+  → play — plus dev-mode `testEvent()`, silence-when-unbound, and graceful
+  handling of a missing audio file.
+- Dev-mode test events (`TEST ROUND WIN/LOSS … BOMB PLANT`) are covered at the
+  adapter level (every Home label normalizes to its matching event) and at the
+  app layer (a `BOMB PLANT` trigger fires a `BOMB_PLANTED` rule).
+- Status today: **46 tests passing** (27 unit + 6 closed-loop + 7 application
+  + 3 main-process folder-scan + 3 Music Box port).
 - Renderer unit tests can run under Node via jsdom; keep game/audio logic out
   of React components so they stay testable.
 

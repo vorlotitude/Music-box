@@ -36,10 +36,18 @@ const api = {
     { path: string; name: string; size: number }[]
   >,
   pickDirectory: () => ipcRenderer.invoke("gmb:dialog:pick-directory") as Promise<string | null>,
+  scanDirectory: (dir: string) => ipcRenderer.invoke("gmb:dir:scan-audio", dir) as Promise<
+    { path: string; name: string; size: number }[]
+  >,
   readAudioMeta: (p: string) => ipcRenderer.invoke("gmb:audio:meta", p) as Promise<{
     duration?: number;
   }>,
   toMediaUrl: (absPath: string) => ipcRenderer.invoke("gmb:media:url", absPath) as Promise<string>,
+
+  // Music Box JSON export / import
+  exportJson: (defaultName: string, content: string) =>
+    ipcRenderer.invoke("gmb:file:export-json", defaultName, content) as Promise<boolean>,
+  importJson: () => ipcRenderer.invoke("gmb:file:import-json") as Promise<{ name: string; content: string } | null>,
 
   // App control
   minimize: () => ipcRenderer.invoke("gmb:window:minimize"),

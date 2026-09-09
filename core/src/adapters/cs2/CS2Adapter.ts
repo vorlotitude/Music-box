@@ -248,6 +248,10 @@ function normalizeTestType(type: string): GameEventType {
   if (upper.includes("DEATH")) return "PLAYER_DEATH";
   if (upper.includes("MVP")) return "MVP" as GameEventType;
   if (upper.includes("GRENADE")) return "GRENADE_THROW";
+  if (upper.includes("FLASH")) return "FLASH_THROW";
+  if (upper.includes("SMOKE")) return "SMOKE_THROW";
+  if (upper.includes("BOMB") && upper.includes("DEFUSE")) return "BOMB_DEFUSED";
+  if (upper.includes("BOMB")) return "BOMB_PLANTED";
   if (upper.includes("CLUTCH")) return "CLUTCH";
   return "ROUND_WIN";
 }

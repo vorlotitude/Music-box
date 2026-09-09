@@ -22,8 +22,11 @@ export interface GmBridge {
   settingsSave: (s: Record<string, unknown>) => Promise<Record<string, unknown>>;
   openAudioFiles: () => Promise<MediaFile[]>;
   pickDirectory: () => Promise<string | null>;
+  scanDirectory: (dir: string) => Promise<MediaFile[]>;
   readAudioMeta: (p: string) => Promise<{ duration?: number; bytes?: number }>;
   toMediaUrl: (absPath: string) => Promise<string>;
+  exportJson: (defaultName: string, content: string) => Promise<boolean>;
+  importJson: () => Promise<{ name: string; content: string } | null>;
   minimize: () => Promise<void>;
   close: () => Promise<void>;
   onRawPayload: (cb: (payload: Record<string, unknown>) => void) => void;
@@ -72,8 +75,11 @@ function createMock(): GmBridge {
     },
     openAudioFiles: async () => [],
     pickDirectory: async () => null,
+    scanDirectory: async () => [],
     readAudioMeta: async () => ({ duration: undefined }),
     toMediaUrl: async (p) => p,
+    exportJson: async () => true,
+    importJson: async () => null,
     minimize: async () => void 0,
     close: async () => void 0,
     onRawPayload: () => void 0,

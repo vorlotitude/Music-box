@@ -1,8 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
-import { Plus, Trash2, Copy, Settings2, Pencil, Box as BoxIcon } from "lucide-react";
+import { Plus, Trash2, Copy, Settings2, Box as BoxIcon, Download, Upload } from "lucide-react";
 import { useApp } from "../state/useApp";
-import { PageHeader, Title, Subtitle, Button, Grid, Card, Pill, Muted } from "../components/ui";
+import { PageHeader, Title, Subtitle, Button, Grid, Card, Pill, Muted, Row } from "../components/ui";
 import { v4 as uuid } from "uuid";
 import type { MusicBox } from "@core/rules/Rule";
 
@@ -10,6 +10,8 @@ export function MusicBoxesPage() {
   const boxes = useApp((s) => s.boxes);
   const saveBox = useApp((s) => s.saveBox);
   const removeBox = useApp((s) => s.removeBox);
+  const exportBox = useApp((s) => s.exportBox);
+  const importBoxFromFile = useApp((s) => s.importBoxFromFile);
   const navigate = useNavigate();
 
   const createBox = async () => {
@@ -42,7 +44,10 @@ export function MusicBoxesPage() {
           <Title>Music Boxes</Title>
           <Subtitle>Each box is a bundle of event→reaction rules for a game. Build one, then it goes live automatically.</Subtitle>
         </div>
-        <Button onClick={createBox}><Plus />New Music Box</Button>
+        <Row>
+          <Button variant="ghost" onClick={importBoxFromFile}><Upload />Import</Button>
+          <Button onClick={createBox}><Plus />New Music Box</Button>
+        </Row>
       </PageHeader>
 
       {boxes.length === 0 ? (
@@ -63,6 +68,7 @@ export function MusicBoxesPage() {
               <Actions>
                 <Button variant="ghost" onClick={() => navigate(`/rules?box=${b.id}`)}><Settings2 />Edit</Button>
                 <Button variant="ghost" onClick={() => duplicate(b)}><Copy />Copy</Button>
+                <Button variant="ghost" onClick={() => exportBox(b.id)}><Download />Export</Button>
                 <Button variant="danger" onClick={() => onDelete(b)}><Trash2 />Delete</Button>
               </Actions>
             </BoxCard>

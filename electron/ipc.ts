@@ -65,6 +65,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     return res.filePaths[0];
   });
 
+  ipcMain.handle("gmb:dir:scan-audio", async (_e, dir: string) => {
+    return scanAudioDir(dir, 0);
+  });
+
   ipcMain.handle("gmb:audio:meta", async (_e, p: string) => {
     try {
       const stat = fs.statSync(p);
@@ -79,7 +83,56 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     return `appmedia://local/${encodeURIComponent(p)}`;
   });
 
+  // ---- Music Box JSON export / import ----
+  ipcMain.handle("gmb:file:export-json", async (_e, defaultName: string, content: string) => {
+    const win = getWindow();
+    const res = await dialog.showSaveDialog(win!, {
+      title: "Export Music Box",
+      defaultPath: defaultName,
+      filters: [{ name: "Game Music Box", extensions: ["json"] }],
+    });
+    if (res.canceled || !res.filePath) return false;
+    fs.writeFileSync(res.filePath, content, "utf-8");
+    return true;
+  });
+
+  ipcMain.handle("gmb:file:import-json", async () => {
+    const win = getWindow();
+    const res = await dialog.showOpenDialog(win!, {
+      title: "Import Music Box",
+      properties: ["openFile"],
+      filters: [{ name: "Game Music Box", extensions: ["json"] }],
+    });
+    if (res.canceled || !res.filePaths[0]) return null;
+    return { name: path.basename(res.filePaths[0]), content: fs.readFileSync(res.filePaths[0], "utf-8") };
+  });
+
   // ---- Window controls ----
   ipcMain.handle("gmb:window:minimize", () => getWindow()?.minimize());
   ipcMain.handle("gmb:window:close", () => getWindow()?.close());
+}
+
+/** Recursively collect audio files under a directory (bounded depth). */
+export function scanAudioDir(dir: string, depth: number, out: { path: string; name: string; size: number }[] = []): { path: string; name: string; size: number }[] {
+  if (depth > 6) return out;
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    if (e.name.startsWith(".")) continue;
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      scanAudioDir(full, depth + 1, out);
+    } else if (e.isFile() && AUDIO_EXTENSIONS.includes(path.extname(e.name).slice(1).toLowerCase())) {
+      try {
+        out.push({ path: full, name: e.name, size: fs.statSync(full).size });
+      } catch {
+        // unreadable file — skip
+      }
+    }
+  }
+  return out;
 }

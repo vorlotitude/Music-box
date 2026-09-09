@@ -4,6 +4,7 @@ import type { AudioAsset } from "@core/library/AudioAsset";
 import type { MusicBox, Rule } from "@core/rules/Rule";
 import type { SessionSnapshot } from "@core/events/GameEvent";
 import type { LogEntry } from "../domain/GameController";
+import { buildBoxExport, deserializeBoxExport } from "../domain/boxPort";
 import { bridge } from "../bridge";
 
 export interface DefaultSettings {
@@ -58,6 +59,8 @@ export interface AppState {
   removeBox: (id: string) => Promise<void>;
   saveRule: (rule: Rule) => Promise<void>;
   removeRule: (id: string) => Promise<void>;
+  exportBox: (id: string) => Promise<void>;
+  importBoxFromFile: () => Promise<void>;
   // settings
   saveSettings: (patch: Partial<DefaultSettings>) => Promise<void>;
   // logs
@@ -167,6 +170,26 @@ export const useApp = create<AppState>((set, get) => ({
   removeRule: async (id) => {
     await bridge.storeRemove("rules", id);
     set({ rules: get().rules.filter((r) => r.id !== id) });
+  },
+
+  exportBox: async (id) => {
+    const box = get().boxes.find((b) => b.id === id);
+    if (!box) return;
+    const payload = buildBoxExport(box, get().rules);
+    const safeName = (box.name || "music-box").replace(/[\\/:*?"<>|]/g, "_");
+    await bridge.exportJson(`${safeName}.gmb.json`, JSON.stringify(payload, null, 2));
+  },
+
+  importBoxFromFile: async () => {
+    const file = await bridge.importJson();
+    if (!file) return;
+    const parsed = deserializeBoxExport(file.content);
+    if (!parsed) {
+      alert("That file isn't a valid Game Music Box export.");
+      return;
+    }
+    for (const r of parsed.rules) await get().saveRule(r);
+    await get().saveBox(parsed.box);
   },
 
   saveSettings: async (patch) => {

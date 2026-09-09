@@ -1,4 +1,5 @@
 import styled from "styled-components";
+import { useEffect } from "react";
 import { useApp } from "../state/useApp";
 import { controllerRef } from "../state/AppProvider";
 import { PageHeader, Title, Subtitle, Card, Muted } from "../components/ui";
@@ -8,6 +9,11 @@ export function SettingsPage() {
   const saveSettings = useApp((s) => s.saveSettings);
 
   const set = (patch: Partial<typeof settings>) => saveSettings(patch);
+
+  // Apply ducking to the live audio engine whenever the setting changes.
+  useEffect(() => {
+    controllerRef.current?.setDucking(settings.ducking, settings.duckLevel);
+  }, [settings.ducking, settings.duckLevel]);
 
   return (
     <div>

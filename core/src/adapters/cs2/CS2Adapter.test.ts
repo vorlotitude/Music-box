@@ -74,4 +74,28 @@ describe("CS2Adapter GSI parsing", () => {
       "PLAYER_DEATH",
     ]);
   });
+
+  it("normalizes every Home test-button label to the matching event", () => {
+    const adapter = new CS2Adapter();
+    const seen: any[] = [];
+    adapter.onEvent((e) => seen.push(e));
+    adapter.triggerTestEvent("ROUND WIN");
+    adapter.triggerTestEvent("ROUND LOSS");
+    adapter.triggerTestEvent("ROUND START");
+    adapter.triggerTestEvent("KILL");
+    adapter.triggerTestEvent("DEATH");
+    adapter.triggerTestEvent("MVP");
+    adapter.triggerTestEvent("GRENADE");
+    adapter.triggerTestEvent("BOMB PLANT");
+    expect(seen.map((e) => e.type)).toEqual([
+      "ROUND_WIN",
+      "ROUND_LOSS",
+      "ROUND_START",
+      "PLAYER_KILL",
+      "PLAYER_DEATH",
+      "MVP",
+      "GRENADE_THROW",
+      "BOMB_PLANTED",
+    ]);
+  });
 });
