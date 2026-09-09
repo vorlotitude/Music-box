@@ -138,6 +138,9 @@ export class CS2Adapter extends BaseGameAdapter {
         // New round beginning (brand new phase entering freezetime).
         events.push(this.make("ROUND_START"));
         this.session = { ...this.session, gamePhase: "freezetime" };
+        // Re-arm round-outcome detection for the upcoming round.
+        p.roundLocked = false;
+        p.winTeam = "";
       }
       if (newPhase === "live" && (p.roundPhase === "freezetime")) {
         this.session.gamePhase = "live";

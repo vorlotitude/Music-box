@@ -70,12 +70,22 @@ Output lands in `release/`.
 ## Verify & test
 
 ```bash
-npm test             # unit tests (event / rule / audio engines, CS2 adapter)
+npm test             # unit + integration tests (engines, CS2 adapter, closed loop)
 npm run test:watch
 npm run typecheck    # strict TS check of renderer + core + electron
 ```
 
-Status: **26 unit tests passing.**
+Status: **32 tests passing** — 26 unit tests (event / rule / audio engines, CS2
+adapter) plus **6 closed-loop integration tests** that prove the real pipeline
+end-to-end with a fake audio backend:
+
+```text
+CS2 GSI payload → CS2Adapter → EventEngine → RuleEngine → AudioEngine → playback
+```
+
+Covered scenarios: binding an asset to a win, silence when unbound, priority
+conflict resolution, cooldown blocking, `winStreak >= 3` conditions, and
+ducking while the mic is active.
 
 ---
 
