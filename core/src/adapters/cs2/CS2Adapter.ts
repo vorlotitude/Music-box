@@ -21,6 +21,11 @@ import { BaseGameAdapter, AdapterState } from "../GameAdapter";
 
 type TeamId = "CT" | "T" | "" | "Spectator";
 
+interface TeamScore {
+  score?: number;
+  map_score?: number;
+}
+
 interface Cs2Payload {
   round?: {
     phase?: string;
@@ -39,11 +44,19 @@ interface Cs2Payload {
       death?: number;
     };
   };
-  map?: { phase?: string; round?: number; mode?: string };
+  map?: {
+    phase?: string;
+    round?: number;
+    mode?: string;
+    team_ct?: TeamScore;
+    team_t?: TeamScore;
+  };
 }
 
 export interface BeginRoundOptions {
   healthThreshold?: number;
+  /** Rounds to win a match (match point = roundsToWin - 1). Default competitive = 13. */
+  roundsToWin?: number;
 }
 
 export class CS2Adapter extends BaseGameAdapter {
@@ -68,15 +81,18 @@ export class CS2Adapter extends BaseGameAdapter {
     playerKills?: number;
     playerHealth?: number;
     mapRound?: number;
+    mapPhase?: string;
     bomb?: string;
     roundLocked?: boolean;
+    myScore?: number;
+    matchPoint?: boolean;
   } = {};
   private session: SessionSnapshot = {
     kills: 0, deaths: 0, assists: 0, wins: 0, losses: 0,
     roundsWon: 0, roundsLost: 0, winStreak: 0, lossStreak: 0,
     health: 100, matchPoint: false, gamePhase: "unknown",
   };
-  private opts: BeginRoundOptions = { healthThreshold: 25 };
+  private opts: BeginRoundOptions = { healthThreshold: 25, roundsToWin: 13 };
   private seq = 0;
 
   shouldRestartOnRound = false;
@@ -93,9 +109,12 @@ export class CS2Adapter extends BaseGameAdapter {
     return this.state;
   }
 
-  configure(config: Record<string, unknown> & { healthThreshold?: number }): void {
+  configure(config: Record<string, unknown> & BeginRoundOptions): void {
     if (typeof config.healthThreshold === "number") {
       this.opts.healthThreshold = config.healthThreshold;
+    }
+    if (typeof config.roundsToWin === "number" && config.roundsToWin > 1) {
+      this.opts.roundsToWin = config.roundsToWin;
     }
   }
 
@@ -126,9 +145,23 @@ export class CS2Adapter extends BaseGameAdapter {
     const p = this.prev;
 
     // Map / match transitions
-    if (payload.map?.phase === "gameover") {
-      events.push(this.make("GAME_END"));
-      this.session = { ...this.session, gamePhase: "gameover" };
+    const mapPhase = payload.map?.phase;
+    if (mapPhase && mapPhase !== p.mapPhase) {
+      if (
+        (mapPhase === "live" || mapPhase === "matchlive") &&
+        p.mapPhase !== "live" &&
+        p.mapPhase !== "matchlive" &&
+        p.mapPhase !== "gameover"
+      ) {
+        // Entering live play from a non-live phase = a new match started.
+        this.resetSession();
+        events.push(this.make("GAME_START"));
+      }
+      if (mapPhase === "gameover") {
+        events.push(this.make("GAME_END"));
+        this.session = { ...this.session, gamePhase: "gameover" };
+      }
+      p.mapPhase = mapPhase;
     }
 
     // Round transitions
@@ -187,8 +220,14 @@ export class CS2Adapter extends BaseGameAdapter {
           };
         }
       }
-      // Low HP threshold event
-      if (health > 0 && health <= this.opts.healthThreshold!) {
+      // Low HP: emit only when we cross INTO the threshold (edge-triggered),
+      // so repeated GSI echoes while staying low don't re-fire the rule.
+      const threshold = this.opts.healthThreshold!;
+      const crossedIntoLow =
+        health > 0 &&
+        health <= threshold &&
+        (typeof p.playerHealth !== "number" || p.playerHealth > threshold);
+      if (crossedIntoLow) {
         events.push(this.make("LOW_HP", { health }));
       }
       this.session.health = health;
@@ -203,9 +242,49 @@ export class CS2Adapter extends BaseGameAdapter {
       p.bomb = bomb;
     }
 
+    // Match point: our team is one round win away from winning the match.
+    this.trackMatchPoint(events, (player.team ?? "") as TeamId, payload.map);
+
     this.state = "connected";
     // Avoid spamming connected on every echo; keep lastEventTimes meaningful.
     return events;
+  }
+
+  /** Emit MATCH_POINT (edge-triggered) when our team reaches roundsToWin - 1. */
+  private trackMatchPoint(
+    events: UniversalGameEvent[],
+    team: TeamId,
+    map?: Cs2Payload["map"],
+  ): void {
+    if (!map) return;
+    const myScore =
+      team === "T" ? map.team_t?.score ?? map.team_t?.map_score
+      : team === "CT" ? map.team_ct?.score ?? map.team_ct?.map_score
+      : undefined;
+    if (typeof myScore !== "number") return;
+
+    const target = this.opts.roundsToWin!;
+    const isMatchPoint = myScore === target - 1;
+    if (isMatchPoint && !this.prev.matchPoint) {
+      events.push(this.make("MATCH_POINT"));
+    }
+    this.prev.matchPoint = isMatchPoint;
+    this.session = { ...this.session, matchPoint: isMatchPoint };
+  }
+
+  /** Reset per-match state when a new GAME_START is detected. */
+  private resetSession(): void {
+    this.session = {
+      kills: 0, deaths: 0, assists: 0, wins: 0, losses: 0,
+      roundsWon: 0, roundsLost: 0, winStreak: 0, lossStreak: 0,
+      health: 100, matchPoint: false, gamePhase: "live",
+    };
+    // Mutate in place, not reassign: handlePayload captures a local `p`
+    // reference to this.prev, so swapping the object would orphan it and make
+    // GAME_START re-fire on every subsequent echo.
+    Object.assign(this.prev, {
+      winTeam: "", roundLocked: false, playerKills: 0, myScore: 0, matchPoint: false,
+    });
   }
 
   private applyOutcome(won: boolean): void {
@@ -241,6 +320,9 @@ export class CS2Adapter extends BaseGameAdapter {
 
 function normalizeTestType(type: string): GameEventType {
   const upper = type.toUpperCase().replace(/[- ]/g, "_");
+  if (upper.includes("MATCH") && upper.includes("POINT")) return "MATCH_POINT";
+  if (upper.includes("GAME") && upper.includes("END")) return "GAME_END";
+  if (upper.includes("GAME")) return "GAME_START";
   if (upper.includes("ROUND") && upper.includes("WIN")) return "ROUND_WIN";
   if (upper.includes("ROUND") && upper.includes("LOSS")) return "ROUND_LOSS";
   if (upper.includes("ROUND")) return "ROUND_START";

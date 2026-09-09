@@ -98,4 +98,55 @@ describe("CS2Adapter GSI parsing", () => {
       "BOMB_PLANTED",
     ]);
   });
+
+  it("fires LOW_HP on the cross into the threshold, not on every echo", () => {
+    const adapter = new CS2Adapter();
+    adapter.configure({ healthThreshold: 25 });
+    adapter.handlePayload(payload({}, { state: { health: 100, round_kills: 0 } }));
+    // Crossing into low HP fires once.
+    expect(adapter.handlePayload(payload({}, { state: { health: 20, round_kills: 0 } })).map((e) => e.type))
+      .toContain("LOW_HP");
+    // Staying low must NOT re-fire (repeated GSI echo).
+    expect(adapter.handlePayload(payload({}, { state: { health: 15, round_kills: 0 } })).map((e) => e.type))
+      .not.toContain("LOW_HP");
+    // Heal back up, then drop again → fires a second time.
+    adapter.handlePayload(payload({}, { state: { health: 60, round_kills: 0 } }));
+    expect(adapter.handlePayload(payload({}, { state: { health: 10, round_kills: 0 } })).map((e) => e.type))
+      .toContain("LOW_HP");
+  });
+
+  it("emits GAME_START when entering live play and resets the session", () => {
+    const adapter = new CS2Adapter();
+    const events = adapter.handlePayload(payload({}, {}, { phase: "live" }));
+    expect(events.map((e) => e.type)).toContain("GAME_START");
+    expect(adapter.getSnapshot().kills).toBe(0);
+  });
+
+  it("emits GAME_END on gameover phase", () => {
+    const adapter = new CS2Adapter();
+    const events = adapter.handlePayload(payload({}, {}, { phase: "gameover" }));
+    expect(events.map((e) => e.type)).toContain("GAME_END");
+  });
+
+  it("emits MATCH_POINT at roundsToWin-1 once, and again after a reset", () => {
+    const adapter = new CS2Adapter();
+    adapter.configure({ roundsToWin: 13 });
+    const mp = (score: number) => payload({}, {}, { team_ct: { score } });
+    // 12/13 = our match point.
+    expect(adapter.handlePayload(mp(12)).map((e) => e.type)).toContain("MATCH_POINT");
+    // Repeated echo at match point must not re-fire.
+    expect(adapter.handlePayload(mp(12)).map((e) => e.type)).not.toContain("MATCH_POINT");
+    // Score moves away, then back to match point → fires again.
+    adapter.handlePayload(mp(9));
+    expect(adapter.handlePayload(mp(12)).map((e) => e.type)).toContain("MATCH_POINT");
+  });
+
+  it("dev trigger normalizes MATCH POINT and GAME START", () => {
+    const adapter = new CS2Adapter();
+    const seen: any[] = [];
+    adapter.onEvent((e) => seen.push(e));
+    adapter.triggerTestEvent("MATCH POINT");
+    adapter.triggerTestEvent("GAME START");
+    expect(seen.map((e) => e.type)).toEqual(["MATCH_POINT", "GAME_START"]);
+  });
 });

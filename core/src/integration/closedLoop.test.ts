@@ -160,11 +160,13 @@ describe("Closed loop: CS2 State → Event → Rule → Audio", () => {
     const adapter = new CS2Adapter();
 
     const first = adapter.handlePayload(payload({ phase: "over", win_team: "CT" }));
-    engine.dispatch(first[0]);
-    const r1 = ruleEngine.evaluate(first[0]);
+    // The payload also emits GAME_START/ROUND_START; target the win event itself.
+    const winEvt = first.find((e) => e.type === "ROUND_WIN")!;
+    engine.dispatch(winEvt);
+    const r1 = ruleEngine.evaluate(winEvt);
     expect(r1?.blockedByCooldown).toBe(false);
 
-    const dup: UniversalGameEvent = { ...first[0], id: "evt_dup" };
+    const dup: UniversalGameEvent = { ...winEvt, id: "evt_dup" };
     const r2 = ruleEngine.evaluate(dup);
     expect(r2?.blockedByCooldown).toBe(true);
     expect(r2?.cooldownRemaining).toBeGreaterThan(0);
