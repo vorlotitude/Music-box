@@ -12,7 +12,7 @@ function fakeBackend(): AudioBackend & { calls: string[] } {
       id += 1;
       const handleId = `h${id}`;
       active.set(handleId, true);
-      calls.push(`play:${url}`);
+      calls.push(`play:${url}${opts?.sinks ? `:${opts.sinks.join(",")}` : ""}`);
       // simulate natural end
       if (opts?.onEnded) setTimeout(opts.onEnded, 500);
       return { id: handleId, url } as PlayHandle;
@@ -102,5 +102,29 @@ describe("AudioEngine", () => {
     // voice should not be ducked -> final vol factor 1 (not 0.2)
     const volCalls = backend.calls.filter((c) => c.startsWith("vol:"));
     expect(volCalls.length).toBeGreaterThan(0);
+  });
+
+  it("defaults to the speaker sink when no route is given", async () => {
+    const backend = fakeBackend();
+    const engine = new AudioEngine({ backend });
+    await engine.play([{ action: act, priority: 50 }]);
+    expect(backend.calls[0]).toContain("play:");
+    expect(backend.calls[0]).toContain("SPEAKER");
+  });
+
+  it("propagates TEAMMATES to the voice-chat (virtual mic) sink only", async () => {
+    const backend = fakeBackend();
+    const engine = new AudioEngine({ backend });
+    await engine.play([{ action: act, priority: 50, route: "TEAMMATES" }]);
+    expect(backend.calls[0]).toContain("VOICE_CHAT");
+    expect(backend.calls[0]).not.toContain("SPEAKER");
+  });
+
+  it("propagates BOTH to speaker and voice-chat sinks", async () => {
+    const backend = fakeBackend();
+    const engine = new AudioEngine({ backend });
+    await engine.play([{ action: act, priority: 50, route: "BOTH" }]);
+    expect(backend.calls[0]).toContain("SPEAKER");
+    expect(backend.calls[0]).toContain("VOICE_CHAT");
   });
 });

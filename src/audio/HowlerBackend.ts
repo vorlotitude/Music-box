@@ -2,6 +2,7 @@ import { Howl, Howler } from "howler";
 import type {
   AudioBackend,
   PlayHandle,
+  PlayOptions,
   PlaybackProgress,
 } from "@core/audio/AudioBackend";
 
@@ -23,7 +24,7 @@ export class HowlerBackend implements AudioBackend {
   async play(
     url: string,
     volume: number,
-    opts?: { fadeInMs?: number; fadeOutMs?: number; onEnded?: () => void },
+    opts?: PlayOptions,
   ): Promise<PlayHandle> {
     const id = `h_${++this.seq}`;
     const howl = new Howl({

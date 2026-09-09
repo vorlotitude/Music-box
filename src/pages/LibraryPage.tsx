@@ -31,8 +31,8 @@ export function LibraryPage() {
   const onImportFolder = async () => {
     const dir = await bridge.pickDirectory();
     if (!dir) return;
-    // Folder import resolves paths in main before files arrive; MVP uses single-file dialog.
-    await importFiles([]);
+    const files = await bridge.scanDirectory(dir);
+    if (files.length) await importFiles(files);
   };
 
   return (
@@ -98,7 +98,7 @@ export function LibraryPage() {
   async function quickPlay(id: string) {
     const ra = controllerRef.current?.resolveAsset(id);
     if (!ra) return;
-    await controllerRef.current?.audio.play([{ action: { type: "PLAY_AUDIO", assetId: ra.mediaUrl }, priority: 50 }]);
+    await controllerRef.current?.audio.play([{ action: { type: "PLAY_AUDIO", assetId: ra.mediaUrl }, priority: 50, route: "SELF_ONLY" }]);
   }
 }
 

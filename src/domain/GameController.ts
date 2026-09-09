@@ -2,6 +2,7 @@ import { CS2Adapter } from "@core/adapters/cs2/CS2Adapter";
 import { EventEngine } from "@core/engine/EventEngine";
 import { RuleEngine } from "@core/engine/RuleEngine";
 import { AudioEngine } from "@core/audio/AudioEngine";
+import type { AudioBackend } from "@core/audio/AudioBackend";
 import type {
   UniversalGameEvent,
   GameEventType,
@@ -9,7 +10,7 @@ import type {
 } from "@core/events/GameEvent";
 import { Rule } from "@core/rules/Rule";
 import { AudioAsset } from "@core/library/AudioAsset";
-import { bridge } from "../bridge";
+import { bridge as defaultBridge, GmBridge } from "../bridge";
 import { HowlerBackend } from "../audio/HowlerBackend";
 
 export interface LogEntry {
@@ -23,6 +24,10 @@ export interface GameControllerOptions {
   onSession: (session: SessionSnapshot) => void;
   onConnection: (connected: boolean) => void;
   onPlaying: (info: { url: string; title: string } | null) => void;
+  /** Injectable IPC/store seam (defaults to the Electron bridge). Undoable in tests. */
+  bridge?: GmBridge;
+  /** Injectable playback backend (defaults to HowlerBackend). */
+  backend?: AudioBackend;
 }
 
 let seq = 0;
@@ -31,8 +36,9 @@ export class GameController {
   readonly adapter = new CS2Adapter();
   readonly eventEngine = new EventEngine();
   readonly ruleEngine = new RuleEngine();
-  readonly audio = new AudioEngine({ backend: new HowlerBackend() });
+  audio: AudioEngine;
 
+  private bridgeImpl: GmBridge;
   private assets: AudioAsset[] = [];
   private assetUrlCache = new Map<string, string>();
   private opts: GameControllerOptions;
@@ -40,6 +46,8 @@ export class GameController {
 
   constructor(opts: GameControllerOptions) {
     this.opts = opts;
+    this.bridgeImpl = opts.bridge ?? defaultBridge;
+    this.audio = new AudioEngine({ backend: opts.backend ?? new HowlerBackend() });
 
     this.adapter.onEvent((e) => this.onAdapterEvent(e));
     this.eventEngine.on((e) => this.onNormalized(e));
@@ -50,7 +58,7 @@ export class GameController {
     await this.reloadRules();
 
     // Forward raw CS2 GSI payloads from the main process.
-    bridge.onRawPayload((payload) => {
+    this.bridgeImpl.onRawPayload((payload) => {
       let events: UniversalGameEvent[];
       try {
         events = this.adapter.handlePayload(payload as never);
@@ -61,7 +69,7 @@ export class GameController {
       for (const ev of events) this.eventEngine.dispatch(ev);
     });
 
-    bridge.onGameRunning((running) => this.opts.onConnection(running));
+    this.bridgeImpl.onGameRunning((running) => this.opts.onConnection(running));
   }
 
   private onAdapterEvent(e: UniversalGameEvent): void {
@@ -87,16 +95,16 @@ export class GameController {
   }
 
   async reloadRules(): Promise<void> {
-    const rules = (await bridge.storeAll("rules")) as unknown as Rule[];
+    const rules = (await this.bridgeImpl.storeAll("rules")) as unknown as Rule[];
     this.ruleEngine.setRules(rules);
   }
 
   async reloadAssets(): Promise<void> {
-    this.assets = (await bridge.storeAll("assets")) as unknown as AudioAsset[];
+    this.assets = (await this.bridgeImpl.storeAll("assets")) as unknown as AudioAsset[];
     this.assetUrlCache.clear();
     for (const a of this.assets) {
       try {
-        this.assetUrlCache.set(a.id, await bridge.toMediaUrl(a.filePath));
+        this.assetUrlCache.set(a.id, await this.bridgeImpl.toMediaUrl(a.filePath));
       } catch {
         /* file may be missing; skip */
       }
@@ -114,6 +122,16 @@ export class GameController {
 
   setVolumes(v: Partial<{ master: number; music: number; sfx: number; voice: number }>): void {
     this.audio.setVolumes(v);
+  }
+
+  /** Start/stop ducking (music/SFX duck while talking) from a settings change. */
+  setDucking(enabled: boolean, level?: number): void {
+    if (enabled) {
+      const factor = typeof level === "number" ? Math.max(0, Math.min(1, level)) : 0.2;
+      this.audio.startDucking(200, 0.05, factor);
+    } else {
+      this.audio.stopDucking();
+    }
   }
 
   stopAll(): void {
@@ -150,6 +168,7 @@ export class GameController {
         action: { type: "PLAY_AUDIO", assetId: target.mediaUrl, volume: action.volume },
         priority: rule.priority,
         volumeOverride: action.volume,
+        route: rule.route,
       },
     ]);
   }

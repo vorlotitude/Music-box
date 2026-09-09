@@ -6,6 +6,8 @@
  * fulfills this interface. This keeps the decision logic unit-testable.
  */
 
+import type { AudioSink } from "./AudioRouter";
+
 export interface PlayHandle {
   id: string;
   url: string;
@@ -19,13 +21,17 @@ export interface PlaybackProgress {
   volume: number;
 }
 
+export interface PlayOptions {
+  fadeInMs?: number;
+  fadeOutMs?: number;
+  onEnded?: () => void;
+  /** Routing sinks (e.g. speaker vs virtual mic). Defaults to [SPEAKER]. */
+  sinks?: AudioSink[];
+}
+
 export interface AudioBackend {
   /** Load-and-play a file at url with the given base volume. Resolves handle. */
-  play(url: string, volume: number, options?: {
-    fadeInMs?: number;
-    fadeOutMs?: number;
-    onEnded?: () => void;
-  }): Promise<PlayHandle>;
+  play(url: string, volume: number, options?: PlayOptions): Promise<PlayHandle>;
 
   /** Set volume on an active handle (0..1). */
   setVolume(handleId: string, volume: number): void;

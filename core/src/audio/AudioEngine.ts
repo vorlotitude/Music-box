@@ -1,5 +1,15 @@
 import type { AudioBackend, PlayHandle } from "./AudioBackend";
 import type { RuleAction } from "../rules/Rule";
+import type { AudioRoute } from "../events/GameEvent";
+import { routeToSinks, type AudioSink } from "./AudioRouter";
+
+/** A play request resolved by the rule engine. Route defaults to SELF_ONLY. */
+export interface PlayRequest {
+  action: RuleAction;
+  priority: number;
+  volumeOverride?: number;
+  route?: AudioRoute;
+}
 
 export interface AudioEngineCallbacks {
   onPlaybackStarted?: (info: { assetUrl: string; handleId: string; action: RuleAction }) => void;
@@ -27,6 +37,9 @@ interface ActiveTrack {
   priority: number;
   createdAt: number;
   mutedByDucking?: boolean;
+  /** Where this track is delivered (speaker vs virtual mic). */
+  sinks: AudioSink[];
+  route: AudioRoute;
 }
 
 /**
@@ -77,13 +90,16 @@ export class AudioEngine {
    * interrupt depending on strictness; for MVP, a new high-priority request
    * fades out the current track and starts (simple crossfade).
    */
-  async play(rules: { action: RuleAction; priority: number; volumeOverride?: number }[]): Promise<void> {
+  async play(rules: PlayRequest[]): Promise<void> {
     // For MVP, play the highest-priority resolved action.
     if (rules.length === 0) return;
     const top = rules.reduce((a, b) => (b.priority > a.priority ? b : a));
     const urls = this.resolveUrls(top.action);
     if (urls.length === 0) return;
     const url = urls[0];
+
+    const route = top.route ?? "SELF_ONLY";
+    const sinks = routeToSinks(route);
 
     // Fade out + stop current on interrupt when new priority >= current.
     await this.interrupt(top.priority);
@@ -95,6 +111,7 @@ export class AudioEngine {
       const handle: PlayHandle = await this.backend.play(url, this.effectiveVolumeFrom(top.volumeOverride ?? 1, bus), {
         fadeInMs,
         fadeOutMs: fadeFor(top.action),
+        sinks,
         onEnded: () => this.onTrackEnded(handle.id, url),
       });
       const track: ActiveTrack = {
@@ -104,6 +121,8 @@ export class AudioEngine {
         baseVolume: clamp01(top.volumeOverride ?? 1),
         priority: top.priority,
         createdAt: Date.now(),
+        sinks,
+        route,
       };
       // Recompute volume in case of duck active.
       this.backend.setVolume(handle.id, this.effectiveVolumeFrom(clamp01(top.volumeOverride ?? 1), bus));
