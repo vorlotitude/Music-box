@@ -142,8 +142,15 @@ npm test
 - Dev-mode test events (`TEST ROUND WIN/LOSS … BOMB PLANT`) are covered at the
   adapter level (every Home label normalizes to its matching event) and at the
   app layer (a `BOMB PLANT` trigger fires a `BOMB_PLANTED` rule).
-- Status today: **46 tests passing** (27 unit + 6 closed-loop + 7 application
-  + 3 main-process folder-scan + 3 Music Box port).
+- **CS2 event completeness** is covered at the adapter: GAME_START/END (map
+  phase transitions), MATCH_POINT (score == roundsToWin-1), edge-triggered
+  LOW_HP (fires once per threshold crossing), and MULTIKILL / KILLSTREAK from
+  consecutive-kill streaks (window expiry + death both break the streak).
+- **Cooldown lifecycle** is covered at the app layer: a rule fires → a repeat
+  fire within its window is blocked → a GAME_END (match boundary) resets the
+  cooldown so the rule can fire again in the next match.
+- Status today: **64 tests passing** (43 core unit + 6 closed-loop + 9
+  application-layer + 3 main-process folder-scan + 3 Music Box port).
 - Renderer unit tests can run under Node via jsdom; keep game/audio logic out
   of React components so they stay testable.
 
@@ -159,3 +166,9 @@ npm test
   behind the same virtual-audio component and never touches game anti-cheat.
 - Developer/raw event logging exists in the Rules page; CLI flags for verbose
   logging can be added under `GMB_LOG_LEVEL`.
+- Some event types in the canonical model are **not exposed by CS2 GSI** and so
+  are reachable only via dev-mode test triggers (not real match data):
+  `MVP`, `CLUTCH`, `GRENADE_THROW`, `FLASH_THROW`, `SMOKE_THROW`. Detecting
+  these requires per-game heuristics or an interface GSI does not provide;
+  per the legal design they are left as documented limitations rather than
+  implemented via invasive readbacks.
