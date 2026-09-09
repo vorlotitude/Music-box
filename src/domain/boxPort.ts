@@ -23,8 +23,12 @@ export interface BoxExport {
 }
 
 export function buildBoxExport(box: MusicBox, storeRules: Rule[]): BoxExport {
+  // The exported file is self-contained: resolve the box's rule references
+  // into full Rule records. The `box` keeps its references (ids) untouched.
   const byId = new Map(storeRules.map((r) => [r.id, r]));
-  const rules = (box.rules ?? []).map((r) => byId.get(r.id) ?? r);
+  const rules = (box.rules ?? [])
+    .map((id) => byId.get(id))
+    .filter((r): r is Rule => !!r);
   return { format: BOX_FORMAT, version: BOX_VERSION, box, rules };
 }
 
@@ -54,7 +58,8 @@ export function deserializeBoxExport(json: string): { box: MusicBox; rules: Rule
     name: `${d.box.name} (imported)`,
     createdAt: now,
     updatedAt: now,
-    rules: newRules.map((r) => ({ ...r })),
+    // References: the imported box points at the freshly re-id'd rules only.
+    rules: newRules.map((r) => r.id),
   };
   return { box, rules: newRules };
 }

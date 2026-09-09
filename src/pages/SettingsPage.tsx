@@ -15,6 +15,16 @@ export function SettingsPage() {
     controllerRef.current?.setDucking(settings.ducking, settings.duckLevel);
   }, [settings.ducking, settings.duckLevel]);
 
+  // Apply bus volumes live so the sliders take effect without a manual click.
+  useEffect(() => {
+    controllerRef.current?.setVolumes({
+      master: settings.masterVolume,
+      music: settings.musicVolume,
+      sfx: settings.sfxVolume,
+      voice: settings.voiceVolume,
+    });
+  }, [settings.masterVolume, settings.musicVolume, settings.sfxVolume, settings.voiceVolume]);
+
   return (
     <div>
       <PageHeader>

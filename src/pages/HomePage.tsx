@@ -19,11 +19,15 @@ const TEST_EVENTS = [
 export function HomePage() {
   const session = useApp((s) => s.session);
   const boxes = useApp((s) => s.boxes);
+  const rules = useApp((s) => s.rules);
   const log = useApp((s) => s.log);
   const gameConnected = useApp((s) => s.gameConnected);
   const gameName = "CS2";
 
   const activeBox = boxes.filter((b) => b.enabled)[0];
+  const activeRules = (activeBox?.rules ?? [])
+    .map((id) => rules.find((r) => r.id === id))
+    .filter((r): r is NonNullable<typeof r> => !!r);
 
   const stats: { label: string; value: number | string; kind: "ok" | "bad" | "accent" }[] = [
     { label: "Kills", value: session.kills, kind: "accent" },
@@ -69,7 +73,7 @@ export function HomePage() {
             <div>
               <BoxName>{activeBox.name.toUpperCase()}</BoxName>
               <RuleTicks>
-                {activeBox.rules.filter((r) => r.enabled).slice(0, 8).map((r) => (
+                {activeRules.filter((r) => r.enabled).slice(0, 8).map((r) => (
                   <span key={r.id}>
                     <Pill tone="ok">✓</Pill> {prettyEvent(r.event)}
                   </span>

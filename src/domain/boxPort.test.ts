@@ -13,7 +13,7 @@ function rule(id: string, name: string, event: string) {
 function box(id: string, ruleIds: string[]): MusicBox {
   return {
     id, name: "Chaotic Victory", description: "win box", game: "cs2",
-    rules: ruleIds.map((r) => rule(r, r, "ROUND_WIN")) as any,
+    rules: ruleIds,
     volume: 0.8, enabled: true, createdAt: 1, updatedAt: 1,
   };
 }
@@ -38,8 +38,8 @@ describe("boxPort (Music Box export/import)", () => {
     expect(parsed!.box.id).not.toBe("b1");
     expect(parsed!.rules).toHaveLength(1);
     expect(parsed!.rules[0].id).not.toBe("r1");
-    // box and rules stay linked after re-id
-    expect(parsed!.box.rules[0].id).toBe(parsed!.rules[0].id);
+    // box references (ids) and the re-id'd rules stay linked
+    expect(parsed!.box.rules).toContain(parsed!.rules[0].id);
   });
 
   it("rejects non-Music-Box files without throwing", () => {

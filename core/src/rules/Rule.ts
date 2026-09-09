@@ -73,7 +73,8 @@ export interface MusicBox {
   name: string;
   description?: string;
   game: GameId;
-  rules: Rule[];
+  /** References to authoritative Rule records in the flat `rules` store. */
+  rules: string[];
   /** 0..1 default volume for the box. */
   volume?: number;
   /** Optional visual accent for identification. */

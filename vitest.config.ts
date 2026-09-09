@@ -11,10 +11,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["core/**/*.test.ts", "electron/**/*.test.ts", "src/**/*.test.ts"],
+    include: ["core/**/*.test.ts", "electron/**/*.test.ts", "src/**/*.test.{ts,tsx}"],
     coverage: {
       provider: "v8",
-      include: ["core/src/**/*.ts"],
+      include: ["core/src/**/*.ts", "src/**/*.{ts,tsx}"],
     },
   },
 });

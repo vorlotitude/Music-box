@@ -21,6 +21,7 @@ const IS_DEV = process.env.GMB_DEV === "1" || !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let storeRef: JsonStore | null = null;
 
 function getWindow() {
   return mainWindow;
@@ -30,13 +31,23 @@ function storePath() {
   return path.join(app.getPath("userData"), "game-music-box.json");
 }
 
-function createWindow(): BrowserWindow {
+function readSettings(store: JsonStore): Record<string, unknown> {
+  try {
+    return (store.get("settings", "main") as Record<string, unknown>) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function createWindow(store: JsonStore): BrowserWindow {
+  const settings = readSettings(store);
+  const launchMinimized = settings.launchMinimized === true;
   const win = new BrowserWindow({
     width: 1380,
     height: 860,
     minWidth: 1080,
     minHeight: 680,
-    show: false,
+    show: !launchMinimized,
     title: "Game Music Box",
     backgroundColor: "#0a0a0c",
     autoHideMenuBar: true,
@@ -48,7 +59,7 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  win.once("ready-to-show", () => win.show());
+  if (!launchMinimized) win.once("ready-to-show", () => win.show());
 
   if (process.env.GMB_DEV === "1") {
     win.loadURL(process.env.GMB_DEV_URL || DEV_URL);
@@ -58,8 +69,9 @@ function createWindow(): BrowserWindow {
   }
 
   win.on("close", (e) => {
-    // If we're in tray mode, hide instead of quitting.
-    if (process.env.GMB_TRAY === "1" && !(app as any).isQuitting) {
+    // If minimize-to-tray is enabled, hide instead of quitting.
+    const minimizeToTray = readSettings(store).minimizeToTray !== false;
+    if (minimizeToTray && !(app as any).isQuitting) {
       e.preventDefault();
       win.hide();
     }
@@ -79,7 +91,6 @@ function createTray(win: BrowserWindow): Tray {
   tray.setToolTip("Game Music Box");
   const menu = Menu.buildFromTemplate([
     { label: "Open Game Music Box", click: () => win.show() },
-    { label: "🎧 Dev Mode (open)", click: () => win.show() },
     { type: "separator" },
     { label: "Quit", click: () => { (app as any).isQuitting = true; app.quit(); } },
   ]);
@@ -121,8 +132,20 @@ app.whenReady().then(async () => {
   });
 
   const store = new JsonStore({ filePath: storePath(), logger: log });
+  storeRef = store;
 
-  mainWindow = createWindow();
+  // "Start with Windows" (opt-in) via the OS login items API.
+  const settingsNow = readSettings(store);
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: settingsNow.startWithWindows === true,
+      path: process.execPath,
+    });
+  } catch {
+    /* login-item API unavailable; non-fatal */
+  }
+
+  mainWindow = createWindow(store);
   createTray(mainWindow);
 
   registerIpcHandlers({ store, getWindow });
@@ -153,7 +176,7 @@ app.whenReady().then(async () => {
   monitor.start(5000);
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+    if (storeRef && BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow(storeRef);
     else mainWindow?.show();
   });
 });

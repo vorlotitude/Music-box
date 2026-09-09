@@ -37,7 +37,7 @@ export function RulesPage() {
   const boxId = params.get("box") ?? boxes[0]?.id ?? "";
   const box = boxes.find((b) => b.id === boxId);
 
-  const boxRuleIds: string[] = useMemo(() => box?.rules.map((r) => r.id) ?? [], [box]);
+  const boxRuleIds: string[] = useMemo(() => box?.rules ?? [], [box]);
   const boxRules = boxRuleIds.map((id) => rules.find((r) => r.id === id)).filter((x): x is Rule => !!x);
 
   // Editor state
@@ -68,7 +68,7 @@ export function RulesPage() {
     await removeRule(r.id);
     await saveBox({
       ...box!, id: box!.id, name: box!.name, description: box!.description, game: box!.game,
-      rules: (box?.rules ?? []).filter((x) => x.id !== r.id), volume: box!.volume,
+      rules: (box?.rules ?? []).filter((x) => x !== r.id), volume: box!.volume,
       createdAt: box!.createdAt, updatedAt: Date.now(), enabled: box!.enabled,
     });
     await controllerRef.current?.reloadRules();
@@ -98,10 +98,12 @@ export function RulesPage() {
     await saveRule(rule);
     // Attach to box.
     const nextBox = { ...box, rules: box.rules, updatedAt: Date.now() };
-    if (!nextBox.rules.some((r) => r.id === rule.id)) {
-      nextBox.rules = [...(nextBox.rules ?? []), rule];
+    if (!nextBox.rules.some((r) => r === rule.id)) {
+      nextBox.rules = [...(nextBox.rules ?? []), rule.id];
     } else {
-      nextBox.rules = (nextBox.rules ?? []).map((r) => (r.id === rule.id ? rule : r));
+      // When editing an existing rule bound to the box, the rule entry is just
+      // the id string; no need to replace (the rule body changed in the
+      // rules store, the box is just a reference table).
     }
     await saveBox(nextBox);
     await controllerRef.current?.reloadRules();

@@ -8,7 +8,9 @@ import type { MusicBox } from "@core/rules/Rule";
 
 export function MusicBoxesPage() {
   const boxes = useApp((s) => s.boxes);
+  const rules = useApp((s) => s.rules);
   const saveBox = useApp((s) => s.saveBox);
+  const saveRule = useApp((s) => s.saveRule);
   const removeBox = useApp((s) => s.removeBox);
   const exportBox = useApp((s) => s.exportBox);
   const importBoxFromFile = useApp((s) => s.importBoxFromFile);
@@ -26,9 +28,19 @@ export function MusicBoxesPage() {
 
   const duplicate = async (b: MusicBox) => {
     const now = Date.now();
+    // Deep-copy each referenced rule with a fresh id, then link the copy to it.
+    const ruleMap = new Map(rules.map((r) => [r.id, r]));
+    const newRuleIds: string[] = [];
+    for (const id of b.rules ?? []) {
+      const src = ruleMap.get(id);
+      if (!src) continue;
+      const copy = { ...src, id: uuid(), name: `${src.name} (copy)`, createdAt: now, updatedAt: now };
+      await saveRule(copy);
+      newRuleIds.push(copy.id);
+    }
     await saveBox({
       ...b, id: uuid(), name: `${b.name} (copy)`,
-      rules: b.rules.map((r) => ({ ...r, id: uuid() })),
+      rules: newRuleIds,
       createdAt: now, updatedAt: now,
     });
   };
@@ -64,7 +76,7 @@ export function MusicBoxesPage() {
               </BoxHead>
               <BoxTitle>{b.name}</BoxTitle>
               <BoxDesc>{b.description || "No description"}</BoxDesc>
-              <RuleCount>{b.rules.length} rules · {b.rules.filter((r) => r.enabled).length} active</RuleCount>
+              <RuleCount>{b.rules.length} rules · {b.rules.filter((id) => rules.find((r) => r.id === id)?.enabled).length} active</RuleCount>
               <Actions>
                 <Button variant="ghost" onClick={() => navigate(`/rules?box=${b.id}`)}><Settings2 />Edit</Button>
                 <Button variant="ghost" onClick={() => duplicate(b)}><Copy />Copy</Button>

@@ -75,13 +75,14 @@ npm run test:watch
 npm run typecheck    # strict TS check of renderer + core + electron
 ```
 
-Status: **64 tests passing** — 43 unit tests (event / rule / audio engines, CS2
+Status: **67 tests passing** — 43 unit tests (event / rule / audio engines, CS2
 adapter incl. GAME_START/END, MATCH_POINT, edge-triggered LOW_HP and
 MULTIKILL / KILLSTREAK streak detection, audio router incl. sequential
 crossfade) plus **6 closed-loop integration tests** that prove the real
 pipeline end-to-end with a fake audio backend, plus 9 application-layer tests
 (GameController, incl. sequential handoff and cooldown reset at match
-boundaries), 3 Music Box import/export tests and 3 folder-scan IPC tests:
+boundaries), 3 Music Box import/export tests, 3 folder-scan IPC tests and 3
+RulesPage UI tests (visual rule builder creates/binds rules to a Music Box):
 
 ```text
 CS2 GSI payload → CS2Adapter → EventEngine → RuleEngine → AudioEngine → playback
@@ -94,6 +95,19 @@ while the mic is active, rule audio-routing (`SELF_ONLY` / `TEAMMATES` /
 `BOTH`) flowing into delivery sinks (speaker vs voice-chat virtual mic), and
 `PLAY_SEQUENTIAL` advancing track-by-track on natural end while halting on
 interrupt.
+
+### Run the app (smoke test)
+
+```bash
+npm run build:renderer && npm run build:electron
+npm start            # launches the Electron app
+```
+
+The app boots to the Home dashboard, puts an icon in the system tray, and opens
+a loopback GSI listener on `127.0.0.1:3001` (configurable). Sending a real CS2
+GSI payload to that port is accepted (`HTTP 200`) and logged as "first contact"
+without any crash, which verifies the 
+`CS2 → GSI → adapter → engine → audio` pipeline is live before a match starts.
 
 ---
 
