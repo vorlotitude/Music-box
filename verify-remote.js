@@ -8,9 +8,18 @@ const REPO = process.env.REPO || "vorlotitude/Music-box";
 const BASE = "https://api.github.com/repos/" + REPO;
 const projectDir = __dirname;
 async function gh(u) {
-  const r = await fetch(BASE + u, { headers: { Authorization: `Bearer ${TOKEN}`, "User-Agent": "gmb-verify", "X-GitHub-Api-Version": "2022-11-28" } });
-  if (!r.ok) throw new Error(r.status + " " + r.statusText);
-  return r.json();
+  let lastErr;
+  for (let i = 0; i < 5; i++) {
+    try {
+      const r = await fetch(BASE + u, { headers: { Authorization: `Bearer ${TOKEN}`, "User-Agent": "gmb-verify", "X-GitHub-Api-Version": "2022-11-28" } });
+      if (!r.ok) throw new Error(r.status + " " + r.statusText);
+      return r.json();
+    } catch (e) {
+      lastErr = e;
+      await new Promise((res) => setTimeout(res, 1500));
+    }
+  }
+  throw lastErr;
 }
 (async () => {
   const localLines = execSync("git ls-tree -r HEAD", { cwd: projectDir, encoding: "utf8" }).split("\n").filter(Boolean);
