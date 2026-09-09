@@ -127,8 +127,12 @@ npm test
 
 - `core/src/**/*.test.ts` covers: CS2 payload → events, event engine session
   bookkeeping, rule matching/priority/cooldown, and audio priority/fade/duck.
-- Add integration tests under `core/src/**/*.integration.test.ts` for the
-  `payload → rule → audio` chain using fake backends.
+- **Closed-loop integration tests** live in `core/src/integration/closedLoop.test.ts`.
+  They wire all four layers — `CS2Adapter → EventEngine → RuleEngine →
+  AudioEngine` — with a fake audio backend and assert the real end-to-end
+  behavior: asset binding on a win, silence when unbound, priority-conflict
+  resolution, cooldown blocking, `winStreak >= 3` conditions, and mic-ducking.
+- Status today: **32 tests passing** (26 unit + 6 integration).
 - Renderer unit tests can run under Node via jsdom; keep game/audio logic out
   of React components so they stay testable.
 
