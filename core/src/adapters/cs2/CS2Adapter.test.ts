@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { CS2Adapter } from "./CS2Adapter";
 
 function payload(round: Record<string, unknown>, player?: Record<string, unknown>, map?: Record<string, unknown>) {
@@ -27,6 +27,53 @@ describe("CS2Adapter GSI parsing", () => {
     adapter.handlePayload(payload({}, { state: { health: 100, round_kills: 0 } }));
     const events = adapter.handlePayload(payload({}, { state: { health: 100, round_kills: 2 } }));
     expect(events.map((e) => e.type)).toContain("PLAYER_KILL");
+  });
+
+  it("emits MULTIKILL / KILLSTREAK on consecutive quick kills", () => {
+    const adapter = new CS2Adapter();
+    adapter.configure({ killStreakWindowMs: 10_000 });
+    adapter.handlePayload(payload({})); // seed: GAME_START zeroes playerKills
+    const k1 = adapter.handlePayload(payload({}, { state: { round_kills: 1 } }));
+    expect(k1.map((e) => e.type)).toContain("PLAYER_KILL");
+    expect(k1.map((e) => e.type)).not.toContain("MULTIKILL");
+
+    const k2 = adapter.handlePayload(payload({}, { state: { round_kills: 2 } }));
+    expect(k2.map((e) => e.type)).toContain("MULTIKILL"); // 2-kill streak
+    expect(k2.map((e) => e.type)).not.toContain("KILLSTREAK");
+
+    const k3 = adapter.handlePayload(payload({}, { state: { round_kills: 3 } }));
+    expect(k3.map((e) => e.type)).toContain("KILLSTREAK"); // 3-kill streak
+  });
+
+  it("breaks a kill streak when the window between kills expires", () => {
+    vi.useFakeTimers();
+    const adapter = new CS2Adapter();
+    adapter.configure({ killStreakWindowMs: 5_000 });
+    try {
+      adapter.handlePayload(payload({}));
+      const k1 = adapter.handlePayload(payload({}, { state: { round_kills: 1 } })); // streak 1
+      expect(k1.map((e) => e.type)).not.toContain("MULTIKILL");
+      vi.advanceTimersByTime(6_000);
+      // Next kill falls outside the window → streak resets to 1, no MULTIKILL.
+      const k2 = adapter.handlePayload(payload({}, { state: { round_kills: 2 } }));
+      expect(k2.map((e) => e.type)).toContain("PLAYER_KILL");
+      expect(k2.map((e) => e.type)).not.toContain("MULTIKILL");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a death breaks the current kill streak", () => {
+    const adapter = new CS2Adapter();
+    adapter.configure({ killStreakWindowMs: 10_000 });
+    adapter.handlePayload(payload({}));
+    adapter.handlePayload(payload({}, { state: { round_kills: 1 } })); // streak 1
+    adapter.handlePayload(payload({}, { state: { round_kills: 2 } })); // streak 2 (MULTIKILL)
+    // Player dies, ending the streak.
+    adapter.handlePayload(payload({}, { state: { round_kills: 2, health: 0 } }));
+    const afterDeath = adapter.handlePayload(payload({}, { state: { round_kills: 3, health: 100 } }));
+    expect(afterDeath.map((e) => e.type)).toContain("PLAYER_KILL");
+    expect(afterDeath.map((e) => e.type)).not.toContain("MULTIKILL");
   });
 
   it("detects death when health drops to zero", () => {

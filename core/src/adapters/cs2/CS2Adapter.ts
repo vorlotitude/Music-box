@@ -57,6 +57,8 @@ export interface BeginRoundOptions {
   healthThreshold?: number;
   /** Rounds to win a match (match point = roundsToWin - 1). Default competitive = 13. */
   roundsToWin?: number;
+  /** Max ms between consecutive kills to consider the streak linked. Default 10s. */
+  killStreakWindowMs?: number;
 }
 
 export class CS2Adapter extends BaseGameAdapter {
@@ -86,13 +88,15 @@ export class CS2Adapter extends BaseGameAdapter {
     roundLocked?: boolean;
     myScore?: number;
     matchPoint?: boolean;
+    killStreak?: number;
+    lastKillTime?: number;
   } = {};
   private session: SessionSnapshot = {
     kills: 0, deaths: 0, assists: 0, wins: 0, losses: 0,
     roundsWon: 0, roundsLost: 0, winStreak: 0, lossStreak: 0,
     health: 100, matchPoint: false, gamePhase: "unknown",
   };
-  private opts: BeginRoundOptions = { healthThreshold: 25, roundsToWin: 13 };
+  private opts: BeginRoundOptions = { healthThreshold: 25, roundsToWin: 13, killStreakWindowMs: 10000 };
   private seq = 0;
 
   shouldRestartOnRound = false;
@@ -115,6 +119,9 @@ export class CS2Adapter extends BaseGameAdapter {
     }
     if (typeof config.roundsToWin === "number" && config.roundsToWin > 1) {
       this.opts.roundsToWin = config.roundsToWin;
+    }
+    if (typeof config.killStreakWindowMs === "number" && config.killStreakWindowMs > 0) {
+      this.opts.killStreakWindowMs = config.killStreakWindowMs;
     }
   }
 
@@ -174,6 +181,9 @@ export class CS2Adapter extends BaseGameAdapter {
         // Re-arm round-outcome detection for the upcoming round.
         p.roundLocked = false;
         p.winTeam = "";
+        // A fresh round resets the current kill streak.
+        p.killStreak = 0;
+        p.lastKillTime = undefined;
       }
       if (newPhase === "live" && (p.roundPhase === "freezetime")) {
         this.session.gamePhase = "live";
@@ -205,6 +215,20 @@ export class CS2Adapter extends BaseGameAdapter {
         ...this.session,
         kills: this.session.kills + (kills - p.playerKills),
       };
+      // Streak: consecutive kills within a short window (reset on death/round).
+      const now = Date.now();
+      if (typeof p.lastKillTime === "number" && now - p.lastKillTime <= (this.opts.killStreakWindowMs ?? 10_000)) {
+        p.killStreak = (p.killStreak ?? 1) + 1;
+      } else {
+        p.killStreak = 1;
+      }
+      p.lastKillTime = now;
+      if (p.killStreak >= 2) {
+        events.push(this.make("MULTIKILL", { streak: p.killStreak }));
+      }
+      if (p.killStreak >= 3) {
+        events.push(this.make("KILLSTREAK", { tier: p.killStreak }));
+      }
     }
     p.playerKills = kills;
 
@@ -218,6 +242,9 @@ export class CS2Adapter extends BaseGameAdapter {
             ...this.session,
             deaths: this.session.deaths + 1,
           };
+          // A death ends any current kill streak.
+          p.killStreak = 0;
+          p.lastKillTime = undefined;
         }
       }
       // Low HP: emit only when we cross INTO the threshold (edge-triggered),
@@ -284,6 +311,7 @@ export class CS2Adapter extends BaseGameAdapter {
     // GAME_START re-fire on every subsequent echo.
     Object.assign(this.prev, {
       winTeam: "", roundLocked: false, playerKills: 0, myScore: 0, matchPoint: false,
+      killStreak: 0, lastKillTime: undefined,
     });
   }
 

@@ -123,8 +123,15 @@ export class EventEngine {
         this.consecutiveKills = 0;
         break;
       case "MULTIKILL":
-        this.session.kills += 3;
+      case "KILLSTREAK": {
+        // Achievements are informational: the underlying kills were already
+        // tallied by their PLAYER_KILL events. Re-sync the consecutive counter
+        // to the reported streak (missing context → keep as-is).
+        const streak = typeof e.context?.streak === "number" ? e.context.streak
+          : typeof e.context?.tier === "number" ? e.context.tier : this.consecutiveKills;
+        this.consecutiveKills = streak;
         break;
+      }
       case "LOW_HP": {
         const raw = e.context?.health ?? 40;
         const hp = typeof raw === "number" ? raw : 40;
