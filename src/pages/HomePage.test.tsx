@@ -16,23 +16,23 @@ import { theme } from "../theme";
 import { HomePage } from "./HomePage";
 import { useApp } from "../state/useApp";
 import { controllerRef } from "../state/AppProvider";
-import type { MusicBox } from "@core/rules/Rule";
+import type { MusicBox, Rule } from "@core/rules/Rule";
 
 function box(id: string, name: string, ruleIds: string[] = []): MusicBox {
   return { id, name, description: "", game: "cs2", rules: ruleIds, volume: 1, enabled: true, createdAt: 1, updatedAt: 1 };
 }
 
-const rule = {
+const rule: Rule = {
   id: "r1", name: "Victory", game: "cs2", event: "ROUND_WIN", conditions: [],
-  action: { type: "PLAY_AUDIO" as const, assetId: "a1" },
-  priority: 100, cooldownMs: 8000, route: "SELF_ONLY" as const, enabled: true,
+  action: { type: "PLAY_AUDIO", assetId: "a1" },
+  priority: 100, cooldownMs: 8000, route: "SELF_ONLY", enabled: true,
 };
 
 function seed() {
   useApp.setState({
     ready: true,
     gameConnected: true,
-    session: { kills: 18, deaths: 9, wins: 12, losses: 7 },
+    session: { kills: 18, deaths: 9, wins: 12, losses: 7, assists: 3, winStreak: 1, lossStreak: 0, health: 100, matchPoint: false, gamePhase: "live" },
     assets: [],
     boxes: [box("b1", "Chaotic Victory", ["r1"])],
     rules: [rule],

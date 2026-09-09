@@ -20,6 +20,8 @@ export interface DefaultSettings {
   minimizeToTray: boolean;
   launchMinimized: boolean;
   developerMode: boolean;
+  /** Where the processed mix is delivered: speaker / both / virtualMic. */
+  outputTarget: "speaker" | "both" | "virtualMic";
 }
 
 export const DEFAULT_SETTINGS: DefaultSettings = {
@@ -35,6 +37,7 @@ export const DEFAULT_SETTINGS: DefaultSettings = {
   minimizeToTray: true,
   launchMinimized: false,
   developerMode: true,
+  outputTarget: "speaker",
 };
 
 export interface AppState {

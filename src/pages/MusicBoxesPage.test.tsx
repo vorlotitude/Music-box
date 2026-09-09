@@ -16,7 +16,7 @@ import { ThemeProvider } from "styled-components";
 import { theme } from "../theme";
 import { MusicBoxesPage } from "./MusicBoxesPage";
 import { useApp } from "../state/useApp";
-import type { MusicBox } from "@core/rules/Rule";
+import type { MusicBox, Rule } from "@core/rules/Rule";
 
 function box(id: string, name: string, ruleIds: string[] = [], enabled = true): MusicBox {
   return { id, name, description: "", game: "cs2", rules: ruleIds, volume: 1, enabled, createdAt: 1, updatedAt: 1 };
@@ -24,10 +24,10 @@ function box(id: string, name: string, ruleIds: string[] = [], enabled = true): 
 
 function seed() {
   // A box referencing one enabled rule, so duplicate/delete act on real data.
-  const rule = {
+  const rule: Rule = {
     id: "r1", name: "Victory", game: "cs2", event: "ROUND_WIN", conditions: [],
-    action: { type: "PLAY_AUDIO" as const, assetId: "a1" },
-    priority: 100, cooldownMs: 8000, route: "SELF_ONLY" as const, enabled: true,
+    action: { type: "PLAY_AUDIO", assetId: "a1" },
+    priority: 100, cooldownMs: 8000, route: "SELF_ONLY", enabled: true,
   };
   useApp.setState({
     ready: true,

@@ -99,9 +99,9 @@ export function SettingsPage() {
         <Card style={{ flex: 1 }}>
           <H>Output Routing</H>
           <Muted style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
-            Architecture is ready for SELF_ONLY / TEAMMATES / BOTH and a Virtual Microphone. The MVP outputs to your speakers/headphones; a virtual mic device is a separate, opt-in driver component.
+            Choose your delivery target (speakers, both, or virtual mic) on the Audio page. The MVP outputs to your speakers/headphones; a virtual mic device is a separate, opt-in driver component.
           </Muted>
-          <PillNote>Headphones / Speakers (active) · Virtual Microphone (planned)</PillNote>
+          <PillNote>Headphones / Speakers (active) · Virtual Microphone (planned) → set in Audio</PillNote>
         </Card>
       </Row>
 

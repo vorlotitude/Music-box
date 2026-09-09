@@ -8,12 +8,14 @@ import {
   SlidersHorizontal,
   Settings,
   Music2,
+  AudioLines,
 } from "lucide-react";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { MusicBoxesPage } from "./pages/MusicBoxesPage";
 import { GamesPage } from "./pages/GamesPage";
 import { RulesPage } from "./pages/RulesPage";
+import { AudioPage } from "./pages/AudioPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { BottomPlayer } from "./components/BottomPlayer";
 
@@ -23,6 +25,7 @@ const NAV = [
   { to: "/boxes", label: "Music Boxes", icon: Box },
   { to: "/games", label: "Games", icon: Gamepad2 },
   { to: "/rules", label: "Rules", icon: SlidersHorizontal },
+  { to: "/audio", label: "Audio", icon: AudioLines },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -66,6 +69,7 @@ export function App() {
             <Route path="/boxes" element={<MusicBoxesPage />} />
             <Route path="/games" element={<GamesPage />} />
             <Route path="/rules" element={<RulesPage />} />
+            <Route path="/audio" element={<AudioPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Content>
