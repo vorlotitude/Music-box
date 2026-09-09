@@ -2,6 +2,7 @@ import { CS2Adapter } from "@core/adapters/cs2/CS2Adapter";
 import { EventEngine } from "@core/engine/EventEngine";
 import { RuleEngine } from "@core/engine/RuleEngine";
 import { AudioEngine } from "@core/audio/AudioEngine";
+import type { PlayRequest } from "@core/audio/AudioEngine";
 import type { AudioBackend } from "@core/audio/AudioBackend";
 import type {
   UniversalGameEvent,
@@ -146,12 +147,19 @@ export class GameController {
     if (action.type === "PLAY_AUDIO") {
       const r = this.resolveAsset(action.assetId);
       if (r) urls.push(r);
-    } else if (action.type === "PLAY_RANDOM" || action.type === "PLAY_SEQUENTIAL") {
-      // Random pick for MVP at the app layer.
+    } else if (action.type === "PLAY_RANDOM") {
+      // Random selection at the app layer.
       const pool = (action.assetIds ?? [])
         .map((id) => this.resolveAsset(id))
         .filter((x): x is { mediaUrl: string; title: string } => !!x);
       if (pool.length) urls.push(pool[Math.floor(Math.random() * pool.length)]);
+    } else if (action.type === "PLAY_SEQUENTIAL") {
+      // Pass the whole resolved pool through; the AudioEngine chains them.
+      urls.push(
+        ...(action.assetIds ?? [])
+          .map((id) => this.resolveAsset(id))
+          .filter((x): x is { mediaUrl: string; title: string } => !!x),
+      );
     }
     if (urls.length === 0) {
       this.log("audio", `Rule "${rule.name}" matched but no playable audio`);
@@ -163,14 +171,21 @@ export class GameController {
     this.playingUrl = target.mediaUrl;
     this.opts.onPlaying({ url: target.mediaUrl, title: target.title });
 
-    void this.audio.play([
-      {
-        action: { type: "PLAY_AUDIO", assetId: target.mediaUrl, volume: action.volume },
-        priority: rule.priority,
-        volumeOverride: action.volume,
-        route: rule.route,
-      },
-    ]);
+    const op: PlayRequest =
+      action.type === "PLAY_SEQUENTIAL"
+        ? {
+            action: { type: "PLAY_SEQUENTIAL", assetIds: urls.map((u) => u.mediaUrl), fadeMs: 200 },
+            priority: rule.priority,
+            volumeOverride: action.volume,
+            route: rule.route,
+          }
+        : {
+            action: { type: "PLAY_AUDIO", assetId: target.mediaUrl, volume: action.volume },
+            priority: rule.priority,
+            volumeOverride: action.volume,
+            route: rule.route,
+          };
+    void this.audio.play([op]);
   }
 
   private log(kind: LogEntry["kind"], message: string): void {

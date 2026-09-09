@@ -85,9 +85,13 @@ class FakeBackend implements AudioBackend {
   micLevel = 0;
   private seq = 0;
 
-  async play(url: string, volume: number): Promise<PlayHandle> {
+  async play(url: string, volume: number, opts?: { onEnded?: () => void }): Promise<PlayHandle> {
     const handleId = `h_${this.seq++}`;
     this.played.push({ url, volume, handleId });
+    if (opts?.onEnded) {
+      // Let sequential chains advance in tests.
+      setTimeout(() => opts?.onEnded?.(), 10);
+    }
     return { id: handleId, url };
   }
   setVolume(): void {}
@@ -272,6 +276,38 @@ describe("GameController application layer: import → rule → event → play",
     expect(["media://C:\\Music\\Victory.mp3", "media://C:\\Music\\Sad.mp3"]).toContain(picked);
   });
 
+  it("passes the full pool to the engine for a PLAY_SEQUENTIAL rule", async () => {
+    const bridge = new FakeBridge();
+    const backend = new FakeBackend();
+    bridge.seed(asset("victory.mp3", "C:\\Music\\Victory.mp3", "music"));
+    bridge.seed(asset("sad.mp3", "C:\\Music\\Sad.mp3", "music"));
+    bridge.seed({
+      id: "r_seq",
+      name: "seq",
+      game: "cs2",
+      event: "ROUND_WIN",
+      conditions: [],
+      action: { type: "PLAY_SEQUENTIAL", assetIds: ["victory.mp3", "sad.mp3"] },
+      priority: 100,
+      cooldownMs: 0,
+      route: "SELF_ONLY",
+      enabled: true,
+    } as Rule);
+
+    const controller = new GameController({
+      onLog: vi.fn(), onSession: vi.fn(), onConnection: vi.fn(), onPlaying: vi.fn(),
+      bridge, backend,
+    });
+    await controller.init();
+    controller.testEvent("ROUND_WIN");
+    await delay(80);
+
+    const urls = backend.played.map((p) => p.url);
+    expect(backend.played.length).toBe(2);
+    expect(urls).toContain("media://C:\\Music\\Victory.mp3");
+    expect(urls).toContain("media://C:\\Music\\Sad.mp3");
+  });
+
   it("stays silent when no rule is bound to the arriving event", async () => {
     const { controller, bridge, backend, onPlaying } = boot();
     await controller.init();
@@ -299,3 +335,7 @@ describe("GameController application layer: import → rule → event → play",
     expect(logs.some((l) => l.kind === "audio")).toBe(true);
   });
 });
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

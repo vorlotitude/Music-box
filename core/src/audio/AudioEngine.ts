@@ -86,53 +86,111 @@ export class AudioEngine {
   }
 
   /**
-   * Play a resolved action against the queue. High-priority or everything can
-   * interrupt depending on strictness; for MVP, a new high-priority request
-   * fades out the current track and starts (simple crossfade).
+   * Play a resolved action against the queue. High-priority requests can
+   * interrupt the current track (fade-out then start — a simple crossfade).
+   * Sequential actions play their asset list in order, advancing to the next
+   * track on natural end; an interrupt/stop also halts the remaining sequence.
    */
   async play(rules: PlayRequest[]): Promise<void> {
     // For MVP, play the highest-priority resolved action.
     if (rules.length === 0) return;
     const top = rules.reduce((a, b) => (b.priority > a.priority ? b : a));
-    const urls = this.resolveUrls(top.action);
-    if (urls.length === 0) return;
-    const url = urls[0];
-
     const route = top.route ?? "SELF_ONLY";
     const sinks = routeToSinks(route);
 
     // Fade out + stop current on interrupt when new priority >= current.
     await this.interrupt(top.priority);
 
-    const bus = this.actionBus(top.action);
-    const volume = clamp01(top.volumeOverride ?? 1) * this.volumes[bus];
-    const fadeInMs = fadeFor(top.action);
+    if (top.action.type === "PLAY_SEQUENTIAL") {
+      await this.startSequence(top.action, top.priority, top.volumeOverride, route, sinks);
+      return;
+    }
+
+    const urls = this.resolveUrls(top.action);
+    if (urls.length === 0) return;
+    const url = urls[0];
+    let record = "";
+    const handleId = await this.playTrack(url, top.action, top.priority, top.volumeOverride, route, sinks, () =>
+      this.onTrackEnded(record, url),
+    );
+    record = handleId ?? "";
+  }
+
+  /**
+   * Start a single track against the backend and register it in `active`.
+   * Returns the handle id (or null on failure). `onEnded` is only ever called
+   * on NATURAL end; stopping/interrupting the track skips it, which is what
+   * lets an interrupted sequence halt cleanly.
+   */
+  private async playTrack(
+    url: string,
+    action: RuleAction,
+    priority: number,
+    volumeOverride: number | undefined,
+    route: AudioRoute,
+    sinks: AudioSink[],
+    onEnded: () => void,
+  ): Promise<string | null> {
+    const bus = this.actionBus(action);
+    const fadeInMs = fadeFor(action);
     try {
-      const handle: PlayHandle = await this.backend.play(url, this.effectiveVolumeFrom(top.volumeOverride ?? 1, bus), {
-        fadeInMs,
-        fadeOutMs: fadeFor(top.action),
-        sinks,
-        onEnded: () => this.onTrackEnded(handle.id, url),
-      });
+      const handle: PlayHandle = await this.backend.play(
+        url,
+        this.effectiveVolumeFrom(volumeOverride ?? 1, bus),
+        { fadeInMs, fadeOutMs: fadeFor(action), sinks, onEnded },
+      );
       const track: ActiveTrack = {
         handleId: handle.id,
         url,
         bus,
-        baseVolume: clamp01(top.volumeOverride ?? 1),
-        priority: top.priority,
+        baseVolume: clamp01(volumeOverride ?? 1),
+        priority,
         createdAt: Date.now(),
         sinks,
         route,
       };
       // Recompute volume in case of duck active.
-      this.backend.setVolume(handle.id, this.effectiveVolumeFrom(clamp01(top.volumeOverride ?? 1), bus));
+      this.backend.setVolume(handle.id, this.effectiveVolumeFrom(clamp01(volumeOverride ?? 1), bus));
       this.active.set(handle.id, track);
-      this.callbacks.onPlaybackStarted?.({ assetUrl: url, handleId: handle.id, action: top.action });
-      void volume;
+      this.callbacks.onPlaybackStarted?.({ assetUrl: url, handleId: handle.id, action });
+      return handle.id;
     } catch (e) {
       // A missing/unplayable file must NEVER crash the app.
       console.warn("AudioEngine: failed to play", url, e);
+      return null;
     }
+  }
+
+  /** Kick off a sequential playback series from its first track. */
+  private startSequence(
+    action: Extract<RuleAction, { type: "PLAY_SEQUENTIAL" }>,
+    priority: number,
+    volumeOverride: number | undefined,
+    route: AudioRoute,
+    sinks: AudioSink[],
+  ): Promise<void> {
+    const urls = action.assetIds ?? [];
+    return this.playSequenceFrom(urls, 0, action, priority, volumeOverride, route, sinks);
+  }
+
+  /** Play one track of a sequence; on natural end, advance to the next. */
+  private async playSequenceFrom(
+    urls: string[],
+    index: number,
+    action: Extract<RuleAction, { type: "PLAY_SEQUENTIAL" }>,
+    priority: number,
+    volumeOverride: number | undefined,
+    route: AudioRoute,
+    sinks: AudioSink[],
+  ): Promise<void> {
+    if (index >= urls.length) return;
+    const url = urls[index];
+    let record = "";
+    const handleId = await this.playTrack(url, action, priority, volumeOverride, route, sinks, () => {
+      this.onTrackEnded(record, url);
+      void this.playSequenceFrom(urls, index + 1, action, priority, volumeOverride, route, sinks);
+    });
+    record = handleId ?? "";
   }
 
   /** Interrupt (fade-out & stop) all currently playing tracks. */

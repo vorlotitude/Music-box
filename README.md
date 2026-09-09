@@ -75,11 +75,11 @@ npm run test:watch
 npm run typecheck    # strict TS check of renderer + core + electron
 ```
 
-Status: **52 tests passing** — 39 unit tests (event / rule / audio engines, CS2
-adapter, audio router) plus **6 closed-loop integration tests** that prove the
-real pipeline end-to-end with a fake audio backend, plus 7 application-layer
-tests (GameController), 3 Music Box import/export tests and 3 folder-scan IPC
-tests:
+Status: **55 tests passing** — 41 unit tests (event / rule / audio engines, CS2
+adapter, audio router incl. sequential crossfade) plus **6 closed-loop
+integration tests** that prove the real pipeline end-to-end with a fake audio
+backend, plus 8 application-layer tests (GameController, incl. sequential
+handoff), 3 Music Box import/export tests and 3 folder-scan IPC tests:
 
 ```text
 CS2 GSI payload → CS2Adapter → EventEngine → RuleEngine → AudioEngine → playback
@@ -87,8 +87,10 @@ CS2 GSI payload → CS2Adapter → EventEngine → RuleEngine → AudioEngine �
 
 Covered scenarios: binding an asset to a win, silence when unbound, priority
 conflict resolution, cooldown blocking, `winStreak >= 3` conditions, ducking
-while the mic is active, and rule audio-routing (`SELF_ONLY` / `TEAMMATES` /
-`BOTH`) flowing into delivery sinks (speaker vs voice-chat virtual mic).
+while the mic is active, rule audio-routing (`SELF_ONLY` / `TEAMMATES` /
+`BOTH`) flowing into delivery sinks (speaker vs voice-chat virtual mic), and
+`PLAY_SEQUENTIAL` advancing track-by-track on natural end while halting on
+interrupt.
 
 ---
 

@@ -6,6 +6,7 @@ function fakeBackend(): AudioBackend & { calls: string[] } {
   const calls: string[] = [];
   let id = 0;
   const active = new Map<string, boolean>();
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
   return {
     calls,
     async play(url, volume, opts?) {
@@ -13,8 +14,11 @@ function fakeBackend(): AudioBackend & { calls: string[] } {
       const handleId = `h${id}`;
       active.set(handleId, true);
       calls.push(`play:${url}${opts?.sinks ? `:${opts.sinks.join(",")}` : ""}`);
-      // simulate natural end
-      if (opts?.onEnded) setTimeout(opts.onEnded, 500);
+      // simulate natural end (cancelled on stop, mirroring HowlerBackend)
+      if (opts?.onEnded) {
+        const t = setTimeout(opts.onEnded, 500);
+        timers.set(handleId, t);
+      }
       return { id: handleId, url } as PlayHandle;
     },
     setVolume(h, v) {
@@ -25,6 +29,9 @@ function fakeBackend(): AudioBackend & { calls: string[] } {
     resume() {},
     async stop(h, fade) {
       active.delete(h);
+      const t = timers.get(h);
+      if (t) clearTimeout(t);
+      timers.delete(h);
       calls.push(`stop:${h}`);
     },
     isPlaying(h) {
@@ -127,4 +134,33 @@ describe("AudioEngine", () => {
     expect(backend.calls[0]).toContain("SPEAKER");
     expect(backend.calls[0]).toContain("VOICE_CHAT");
   });
+
+  it("advances a sequential action track-by-track on natural end", async () => {
+    const backend = fakeBackend();
+    const engine = new AudioEngine({ backend });
+    const seq = { type: "PLAY_SEQUENTIAL" as const, assetIds: ["a.mp3", "b.mp3"], fadeMs: 100 };
+    await engine.play([{ action: seq, priority: 50 }]);
+    expect(backend.calls[0]).toContain("play:a.mp3");
+    await delay(700);
+    const plays = backend.calls.filter((c) => c.startsWith("play:"));
+    expect(plays.some((c) => c.includes("play:b.mp3"))).toBe(true);
+  });
+
+  it("halts the remaining sequence when interrupted", async () => {
+    const backend = fakeBackend();
+    const engine = new AudioEngine({ backend });
+    const seq = { type: "PLAY_SEQUENTIAL" as const, assetIds: ["a.mp3", "b.mp3", "c.mp3"], fadeMs: 0 };
+    await engine.play([{ action: seq, priority: 50 }]);
+    await delay(550); // a ends (~500ms), b has started
+    await engine.stopAll(); // stop current track -> remaining chain must halt
+    const before = backend.calls.filter((c) => c.startsWith("play:")).length;
+    await delay(1200); // would-be c (~1000ms) if the chain kept advancing
+    const after = backend.calls.filter((c) => c.startsWith("play:")).length;
+    expect(before).toBe(2);
+    expect(after).toBe(2);
+  });
 });
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
