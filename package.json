@@ -1,0 +1,91 @@
+{
+  "name": "game-music-box",
+  "version": "0.1.0",
+  "description": "Game Event → Reaction → Music / SFX companion app for CS2 and other games",
+  "main": "dist/electron/main/index.js",
+  "author": "vorlotitude",
+  "license": "MIT",
+  "private": true,
+  "keywords": [
+    "electron",
+    "react",
+    "typescript",
+    "game",
+    "music",
+    "cs2",
+    "audio"
+  ],
+  "engines": {
+    "node": "^18 || ^20 || ^22",
+    "npm": ">=8"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"tsc -p tsconfig.electron.json --watch\"",
+    "dev:app": "npm run build:electron && electron .",
+    "build": "npm run typecheck && npm run build:renderer && npm run build:electron && electron-builder",
+    "build:dir": "npm run typecheck && npm run build:renderer && npm run build:electron && electron-builder --dir",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "preview": "vite preview",
+    "start": "electron .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "dependencies": {
+    "dayjs": "^1.11.13",
+    "uuid": "^11.0.5",
+    "howler": "^2.2.3",
+    "express": "^4.21.1",
+    "cors": "^2.8.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "zustand": "^5.0.1",
+    "styled-components": "^6.1.13",
+    "lucide-react": "^0.468.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/howler": "^2.2.12",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/uuid": "^10.0.0",
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "eslint": "^8.57.1",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "eslint-plugin-react-refresh": "^0.4.14",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8",
+    "@vitest/coverage-v8": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.yourcompany.gamemusicbox",
+    "productName": "Game Music Box",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "win": {
+      "target": "nsis",
+      "publisherName": "Game Music Box"
+    }
+  }
+}
