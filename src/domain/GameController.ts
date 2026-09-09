@@ -80,6 +80,10 @@ export class GameController {
 
   private onNormalized(e: UniversalGameEvent): void {
     this.log("event", `[${e.game.toUpperCase()}] ${e.type}`);
+    // A new/ended match resets rule cooldowns so no stale rule stays silent.
+    if (e.type === "GAME_START" || e.type === "GAME_END") {
+      this.ruleEngine.resetCooldowns();
+    }
     const result = this.ruleEngine.evaluate(e);
     if (!result) return;
     if (result.blockedByCooldown) {

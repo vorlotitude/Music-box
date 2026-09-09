@@ -319,6 +319,36 @@ describe("GameController application layer: import → rule → event → play",
     expect(onPlaying).not.toHaveBeenCalled();
   });
 
+  it("a match boundary (GAME_END) clears rule cooldowns so rules can fire again", async () => {
+    const { controller, bridge, backend } = boot({
+      rule: winRule("r_cd", "victory.mp3", { cooldownMs: 60000 }),
+    });
+    await controller.init();
+
+    // First win fires the rule.
+    controller.testEvent("ROUND_WIN");
+    await Promise.resolve();
+    expect(backend.played.length).toBe(1);
+
+    // Immediate re-fire is swallowed by the cooldown.
+    controller.testEvent("ROUND_WIN");
+    await Promise.resolve();
+    expect(backend.played.length).toBe(1);
+
+    // The match ends: GAME_END resets cooldowns.
+    bridge.emitPayload({
+      round: { phase: "over", win_team: "", bomb: "", round: 1 },
+      player: { team: "CT", state: { health: 100, round_kills: 0 } },
+      map: { phase: "gameover", round: 1 },
+    });
+    await Promise.resolve();
+
+    // Next win in a new match fires again.
+    controller.testEvent("ROUND_WIN");
+    await delay(30);
+    expect(backend.played.length).toBe(2);
+  });
+
   it("a missing audio file produces a log entry, not a crash", async () => {
     const { controller, bridge, backend, logs } = boot({
       rule: winRule("r_missing", "gone.wav"),
