@@ -18,3 +18,28 @@ Thumbs.db
 # Env
 .env
 .env.local
+.env.*.local
+
+# Local test profile / runtime data (contains cookies and local settings)
+.gmb-test-userdata/
+.gmb-userdata/
+*.sqlite
+*.db
+*.db-journal
+Cookies
+Cookies-journal
+
+# Local-only tooling and notes (absolute paths, credentials helpers, KB ids)
+scripts/
+readtoken.ps1
+sync-remote.js
+push-data-api.js
+verify-remote.js
+.git_commit_msg.txt
+
+# Screenshots / recordings of the local environment
+.screenshots/
+*.mp4
+
+# Personal progress notes
+Game Music Box 项目进度*.md

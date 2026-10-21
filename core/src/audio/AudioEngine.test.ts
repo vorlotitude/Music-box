@@ -49,6 +49,68 @@ function fakeBackend(): AudioBackend & { calls: string[] } {
 const act = { type: "PLAY_AUDIO" as const, assetId: "file:///x/victory.mp3" };
 
 describe("AudioEngine", () => {
+  it("never crashes when the audio file is missing (§26)", async () => {
+    const backend = fakeBackend();
+    const started = vi.fn();
+    const engine = new AudioEngine({ backend, callbacks: { onPlaybackStarted: started } });
+    backend.play = async () => {
+      throw new Error("ENOENT: no such file");
+    };
+    // Engine swallows the failure instead of throwing; nothing reaches the backend.
+    await expect(engine.play([{ action: act, priority: 100 }])).resolves.toBeUndefined();
+    expect(started).not.toHaveBeenCalled();
+    expect(engine.isActive(act.assetId)).toBe(false);
+  });
+
+  it("recovers and keeps playing after a missing file (§26)", async () => {
+    const backend = fakeBackend();
+    const started = vi.fn();
+    const engine = new AudioEngine({ backend, callbacks: { onPlaybackStarted: started } });
+
+    backend.play = async () => {
+      throw new Error("ENOENT");
+    };
+    await engine.play([{ action: act, priority: 100 }]);
+    expect(started).not.toHaveBeenCalled();
+
+    // Restore a working playback path — the engine must keep operating.
+    backend.play = fakeBackend().play;
+    await engine.play([{ action: act, priority: 100 }]);
+    expect(started).toHaveBeenCalledTimes(1);
+    expect(engine.isActive(act.assetId)).toBe(true);
+  });
+
+  it("never crashes when the output device is unavailable (§26)", async () => {
+    const backend = fakeBackend();
+    const started = vi.fn();
+    const engine = new AudioEngine({ backend, callbacks: { onPlaybackStarted: started } });
+    backend.play = async () => {
+      throw new Error("DEVICE_UNAVAILABLE: no output device found");
+    };
+    // Engine swallows the device error; it must not throw or mark the track active.
+    await expect(engine.play([{ action: act, priority: 100 }])).resolves.toBeUndefined();
+    expect(started).not.toHaveBeenCalled();
+    expect(engine.isActive(act.assetId)).toBe(false);
+  });
+
+  it("resumes playing once the output device is restored (§26)", async () => {
+    const backend = fakeBackend();
+    const started = vi.fn();
+    const engine = new AudioEngine({ backend, callbacks: { onPlaybackStarted: started } });
+
+    backend.play = async () => {
+      throw new Error("DEVICE_UNAVAILABLE");
+    };
+    await engine.play([{ action: act, priority: 100 }]);
+    expect(started).not.toHaveBeenCalled();
+
+    // Device comes back — playback must work again without a restart.
+    backend.play = fakeBackend().play;
+    await engine.play([{ action: act, priority: 100 }]);
+    expect(started).toHaveBeenCalledTimes(1);
+    expect(engine.isActive(act.assetId)).toBe(true);
+  });
+
   it("plays the highest-priority action of a batch", async () => {
     const backend = fakeBackend();
     const engine = new AudioEngine({ backend });
@@ -111,6 +173,40 @@ describe("AudioEngine", () => {
     expect(volCalls.length).toBeGreaterThan(0);
   });
 
+  it("ducks music only when mic level exceeds the configured threshold (§7)", async () => {
+    let micLevel = 0;
+    const backend: AudioBackend & { calls: string[] } = {
+      calls: [] as string[],
+      async play(url, volume, opts?) {
+        if (!opts?.sinks) throw new Error("routeToSinks must supply sinks");
+        this.calls.push(`play:${url}:${opts.sinks.join(",")}`);
+        return { id: "h", url } as PlayHandle;
+      },
+      setVolume(h, v) { this.calls.push(`vol:${h}:${v}`); },
+      async fade() {}, pause() {}, resume() {},
+      async stop() {},
+      isPlaying() { return false; },
+      getProgress() { return null; },
+      getMicLevel() { return micLevel; },
+    };
+    const engine = new AudioEngine({ backend });
+    engine.setVolumes({ master: 1, music: 1, sfx: 1, voice: 1 });
+
+    // Mic level below a high threshold (0.5) -> not talking -> volume stays 1.
+    micLevel = 0.3;
+    engine.startDucking(5, 0.5, 0.2);
+    await engine.play([{ action: act, priority: 50 }]);
+    await delay(30);
+    expect(lastVol(backend)).toBeCloseTo(1, 3);
+    engine.stopDucking();
+
+    // Same mic level with a low threshold (0.05) -> talking -> ducked to 0.2.
+    engine.startDucking(5, 0.05, 0.2);
+    await delay(30);
+    expect(lastVol(backend)).toBeCloseTo(0.2, 3);
+    engine.stopDucking();
+  });
+
   it("defaults to the speaker sink when no route is given", async () => {
     const backend = fakeBackend();
     const engine = new AudioEngine({ backend });
@@ -146,6 +242,30 @@ describe("AudioEngine", () => {
     expect(plays.some((c) => c.includes("play:b.mp3"))).toBe(true);
   });
 
+  it("selects a random candidate for PLAY_RANDOM instead of always the first (§6)", async () => {
+    const candidates = ["a.mp3", "b.mp3", "c.mp3"];
+    const rnd = { type: "PLAY_RANDOM" as const, assetIds: candidates };
+    // rng 0 -> first; rng 0.999 -> last. Both must hit the candidate set exactly.
+    const low = fakeBackend();
+    await new AudioEngine({ backend: low, rng: () => 0 }).play([{ action: rnd, priority: 50 }]);
+    expect(low.calls[0]).toContain("play:a.mp3");
+
+    const high = fakeBackend();
+    await new AudioEngine({ backend: high, rng: () => 0.999 }).play([{ action: rnd, priority: 50 }]);
+    expect(high.calls[0]).toContain("play:c.mp3");
+  });
+
+  it("always picks an in-set candidate for PLAY_RANDOM, across a seeded range", async () => {
+    const candidates = ["a.mp3", "b.mp3", "c.mp3"];
+    const rnd = { type: "PLAY_RANDOM" as const, assetIds: candidates };
+    for (let i = 0; i < 20; i++) {
+      const backend = fakeBackend();
+      await new AudioEngine({ backend, rng: () => i / 20 }).play([{ action: rnd, priority: 50 }]);
+      const chosen = backend.calls[0].replace("play:", "").split(":")[0];
+      expect(candidates).toContain(chosen);
+    }
+  });
+
   it("halts the remaining sequence when interrupted", async () => {
     const backend = fakeBackend();
     const engine = new AudioEngine({ backend });
@@ -163,4 +283,10 @@ describe("AudioEngine", () => {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function lastVol(backend: { calls: string[] }): number {
+  const vols = backend.calls.filter((c) => c.startsWith("vol:"));
+  const last = vols[vols.length - 1];
+  return last ? Number(last.split(":")[2]) : NaN;
 }

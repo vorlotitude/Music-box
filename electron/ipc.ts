@@ -1,21 +1,54 @@
-import { ipcMain, dialog, BrowserWindow } from "electron";
+import { ipcMain, dialog, BrowserWindow, app } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { JsonStore, CollectionName } from "./store/JsonStore";
+import { probeDuration } from "./media/meta";
 
 export const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma"];
+
+export const VIDEO_EXTENSIONS = [
+  "mp4", "m4v", "mkv", "mov", "webm", "avi", "flv", "wmv",
+  "mpg", "mpeg", "ts", "3gp", "ogv",
+];
 
 export interface IpcDeps {
   store: JsonStore;
   getWindow: () => BrowserWindow | null;
+  /** Called after any settings change so main can re-apply OS-facing behavior. */
+  onSettingsChanged?: () => void;
+  /** Reflect the live tray "Pause Reaction" label from the renderer's state. */
+  setReactPaused?: (paused: boolean) => void;
 }
 
 export function registerIpcHandlers(deps: IpcDeps): void {
   const { store, getWindow } = deps;
 
+  // Reflect the renderer's live reaction-paused state into the tray menu.
+  ipcMain.handle("gmb:reaction:set", (_e, paused: boolean) => {
+    deps.setReactPaused?.(paused === true);
+  });
+
+  // Grant a transient user activation so HTMLMediaElement.setSinkId can actually
+  // switch output to the virtual CABLE mic. Chromium requires a user gesture to
+  // select a non-default output device; the reaction autoplays with no gesture,
+  // so we synthesize a benign keystroke here (no app hotkey is a bare "X").
+  ipcMain.handle("gmb:grant-activation", () => {
+    const win = getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode: "X" });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode: "X" });
+    }
+    return true;
+  });
+
   ipcMain.handle("gmb:version", () => process.env.npm_package_version ?? "0.1.0");
 
   ipcMain.handle("gmb:data-dir", () => store.getPath());
+
+  // ---- Runtime log (persisted to a dated file under userData/logs) ----
+  ipcMain.handle("gmb:log:append", (_e, entry: { ts?: number; kind?: string; message?: string }) => {
+    appendFileLog(entry);
+  });
 
   // ---- Store ----
   ipcMain.handle("gmb:store:all", (_e, c: CollectionName) => store.all(c));
@@ -37,6 +70,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     store.put("settings", "main", { ...(store.get("settings", "main") ?? {}), ...s });
     const win = getWindow();
     win?.webContents.send("gmb:settings-changed", s);
+    deps.onSettingsChanged?.();
     return store.get("settings", "main");
   });
 
@@ -65,6 +99,45 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     return res.filePaths[0];
   });
 
+  // Pick a video whose audio track should be extracted into a music asset.
+  ipcMain.handle("gmb:dialog:open-video", async () => {
+    const win = getWindow();
+    const res = await dialog.showOpenDialog(win!, {
+      title: "Import video (extract audio)",
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Video", extensions: VIDEO_EXTENSIONS }],
+    });
+    if (res.canceled) return [];
+    return res.filePaths.map((p) => {
+      const stat = fs.statSync(p);
+      return { path: p, name: path.basename(p), size: stat.size };
+    });
+  });
+
+  // Persist an editor-extracted WAV (from a video) into userData/audio so the
+  // asset does not depend on the source video file. fileName is sanitized to a
+  // bare basename to prevent path traversal.
+  ipcMain.handle("gmb:audio:save-extracted", async (_e, fileName: string, bytes: ArrayBuffer | Uint8Array) => {
+    const safe = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, "_");
+    const dir = path.join(store.getPath(), "audio");
+    fs.mkdirSync(dir, { recursive: true });
+    const out = path.join(dir, safe);
+    fs.writeFileSync(out, Buffer.from(bytes as ArrayBuffer));
+    return out;
+  });
+
+  // Pick a local image used as an audio asset's cover (§5 "set cover").
+  ipcMain.handle("gmb:dialog:pick-image", async () => {
+    const win = getWindow();
+    const res = await dialog.showOpenDialog(win!, {
+      title: "Select cover image",
+      properties: ["openFile"],
+      filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "bmp", "gif"] }],
+    });
+    if (res.canceled || !res.filePaths[0]) return null;
+    return res.filePaths[0];
+  });
+
   ipcMain.handle("gmb:dir:scan-audio", async (_e, dir: string) => {
     return scanAudioDir(dir, 0);
   });
@@ -72,7 +145,8 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   ipcMain.handle("gmb:audio:meta", async (_e, p: string) => {
     try {
       const stat = fs.statSync(p);
-      return { duration: undefined, bytes: stat.size };
+      const duration = probeDuration(p);
+      return { duration, bytes: stat.size };
     } catch {
       return { duration: undefined, bytes: 0 };
     }
@@ -110,6 +184,31 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   // ---- Window controls ----
   ipcMain.handle("gmb:window:minimize", () => getWindow()?.minimize());
   ipcMain.handle("gmb:window:close", () => getWindow()?.close());
+}
+
+/** Build a single human-readable log line (time + kind + message). */
+export function formatLogLine(entry: { ts?: number; kind?: string; message?: string }): string {
+  const ts = entry.ts ?? Date.now();
+  const time = new Date(ts).toISOString();
+  const kind = entry.kind ?? "info";
+  return `${time}  ${kind.padEnd(8)}  ${entry.message ?? ""}`;
+}
+
+/** Append a line to today's dated log file under the given logs directory. */
+export function appendLogLine(logsDir: string, entry: { ts?: number; kind?: string; message?: string }): void {
+  fs.mkdirSync(logsDir, { recursive: true });
+  const day = new Date().toISOString().slice(0, 10);
+  const file = path.join(logsDir, `gmb-${day}.log`);
+  fs.appendFileSync(file, formatLogLine(entry) + "\n", "utf-8");
+}
+
+/** Default persistent logger: userData/logs/gmb-<date>.log. Never throws (§26). */
+export function appendFileLog(entry: { ts?: number; kind?: string; message?: string }): void {
+  try {
+    appendLogLine(path.join(app.getPath("userData"), "logs"), entry);
+  } catch {
+    // Logging must never crash the app.
+  }
 }
 
 /** Recursively collect audio files under a directory (bounded depth). */

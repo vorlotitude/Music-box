@@ -1,4 +1,5 @@
-import { Routes, Route, NavLink, useLocation } from "react-router-dom";
+import { useEffect } from "react";
+import { Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import {
   Home,
@@ -9,6 +10,8 @@ import {
   Settings,
   Music2,
   AudioLines,
+  Pause,
+  Radio,
 } from "lucide-react";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
@@ -17,27 +20,46 @@ import { GamesPage } from "./pages/GamesPage";
 import { RulesPage } from "./pages/RulesPage";
 import { AudioPage } from "./pages/AudioPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { OnboardingPage } from "./pages/OnboardingPage";
 import { BottomPlayer } from "./components/BottomPlayer";
+import { NoticeHost } from "./components/NoticeHost";
+import { useApp } from "./state/useApp";
+import { useT } from "./i18n";
+import { setNavigator } from "./navBus";
 
 const NAV = [
-  { to: "/", label: "Home", icon: Home },
-  { to: "/library", label: "Library", icon: Library },
-  { to: "/boxes", label: "Music Boxes", icon: Box },
-  { to: "/games", label: "Games", icon: Gamepad2 },
-  { to: "/rules", label: "Rules", icon: SlidersHorizontal },
-  { to: "/audio", label: "Audio", icon: AudioLines },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/", label: "nav.home", icon: Home },
+  { to: "/library", label: "nav.library", icon: Library },
+  { to: "/boxes", label: "nav.boxes", icon: Box },
+  { to: "/games", label: "nav.games", icon: Gamepad2 },
+  { to: "/rules", label: "nav.rules", icon: SlidersHorizontal },
+  { to: "/audio", label: "nav.audio", icon: AudioLines },
+  { to: "/settings", label: "nav.settings", icon: Settings },
 ];
 
 export function App() {
   const loc = useLocation();
+  const t = useT();
+  const navigate = useNavigate();
+  const paused = useApp((s) => s.paused);
+  const onboarded = useApp((s) => s.settings.onboarded);
+
+  // Let the main process (tray / global shortcuts) trigger route changes.
+  useEffect(() => {
+    setNavigator(navigate);
+    return () => setNavigator(null);
+  }, [navigate]);
+
+  // First run: show a lean onboarding wizard instead of the full shell.
+  if (!onboarded) return <OnboardingPage />;
+
   return (
     <Shell>
       <Sidebar>
         <Brand>
           <BrandIcon><Music2 size={18} /></BrandIcon>
           <BrandText>
-            GAME
+            <span>GAME</span>
             <br />
             <em>MUSIC BOX</em>
           </BrandText>
@@ -47,18 +69,26 @@ export function App() {
           {NAV.map((n) => (
             <NavItem key={n.to} to={n.to} className={({ isActive }) => (isActive ? "active" : "")}>
               <n.icon size={17} />
-              <span>{n.label}</span>
+              <span>{t(n.label)}</span>
             </NavItem>
           ))}
         </NavList>
 
-        <ConnectionBadge>
-          <span className="dot" />
-          <div>
-            <b>CS2</b>
-            <span>GSI · port 3001</span>
-          </div>
-        </ConnectionBadge>
+        <SidebarFooter>
+          <FooterRow>
+            <span className="label">REACTION</span>
+            <span className={`state ${paused ? "warn" : "ok"}`}>
+              {paused ? t("status.paused") : t("status.live")}
+            </span>
+          </FooterRow>
+          <ConnectionBadge>
+            <span className="dot" />
+            <div>
+              <b>CS2</b>
+              <span>{t("nav.gsiBadge", { port: 3001 })}</span>
+            </div>
+          </ConnectionBadge>
+        </SidebarFooter>
       </Sidebar>
 
       <Main>
@@ -75,8 +105,43 @@ export function App() {
         </Content>
       </Main>
 
+      <SystemStatus />
       <BottomPlayer />
+      <NoticeHost />
     </Shell>
+  );
+}
+
+/** Thin bottom system-status strip: current game + audio output + now playing. */
+function SystemStatus() {
+  const t = useT();
+  const gameConnected = useApp((s) => s.gameConnected);
+  const paused = useApp((s) => s.paused);
+  const playing = useApp((s) => s.playing);
+  const outputTarget = useApp((s) => s.settings.outputTarget);
+
+  return (
+    <StatusBar>
+      <StatusItem>
+        <StatusIcon live={gameConnected}><Radio size={13} /></StatusIcon>
+        <span>{t("status.game")}</span>
+        <b className="sig">CS2</b>
+        <StatusPill live={gameConnected}>
+          {gameConnected ? `● ${t("common.connected")}` : `○ ${t("common.disconnected")}`}
+        </StatusPill>
+      </StatusItem>
+      <StatusItem>
+        <span>{t("status.output")}</span>
+        <b>{outputTarget === "virtualMic" ? t("status.mic") : t("status.speakers")}</b>
+      </StatusItem>
+      <StatusItem right>
+        <StatusIcon live={!!playing && !paused}><Pause size={13} /></StatusIcon>
+        <span>{t("status.nowPlaying")}</span>
+        <b className="nowrap sig">
+          {paused ? t("status.paused") : playing ? playing.title : t("player.idle")}
+        </b>
+      </StatusItem>
+    </StatusBar>
   );
 }
 
@@ -84,9 +149,10 @@ const Shell = styled.div`
   height: 100vh;
   display: grid;
   grid-template-columns: 236px 1fr;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: 1fr auto auto;
   grid-template-areas:
     "sidebar main"
+    "sidebar status"
     "sidebar player";
 `;
 
@@ -134,6 +200,19 @@ const NavItem = styled(NavLink)`
   &.active svg { color: ${({ theme }) => theme.accent}; }
 `;
 
+const SidebarFooter = styled.div`
+  display: flex; flex-direction: column; gap: 10px;
+`;
+
+const FooterRow = styled.div`
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; font-size: 11px;
+  .label { color: ${({ theme }) => theme.textDim}; letter-spacing: .08em; font-weight: 600; }
+  .state { font-weight: 700; }
+  .state.ok { color: ${({ theme }) => theme.success}; }
+  .state.warn { color: ${({ theme }) => theme.warning}; }
+`;
+
 const ConnectionBadge = styled.div`
   display: flex; align-items: center; gap: 10px;
   padding: 12px 14px; border-radius: ${({ theme }) => theme.radiusSm};
@@ -154,4 +233,31 @@ const Content = styled.div`
   height: 100%;
   overflow-y: auto;
   padding: 0 8px 8px;
+`;
+
+const StatusBar = styled.div`
+  grid-area: status;
+  height: 40px;
+  background: ${({ theme }) => theme.bgElev};
+  border-top: 1px solid ${({ theme }) => theme.border};
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 0 28px;
+  font-size: 12px;
+`;
+
+const StatusItem = styled.div<{ right?: boolean }>`
+  display: flex; align-items: center; gap: 8px; color: ${({ theme }) => theme.textSoft};
+  ${({ right }) => (right ? "margin-left:auto;" : "")}
+  .sig { color: ${({ theme }) => theme.text}; font-weight: 700; }
+`;
+
+const StatusIcon = styled.span<{ live?: boolean }>`
+  display: grid; place-items: center; color: ${({ theme, live }) => (live ? theme.success : theme.textDim)};
+`;
+
+const StatusPill = styled.span<{ live?: boolean }>`
+  font-size: 11px; font-weight: 700;
+  color: ${({ theme, live }) => (live ? theme.success : theme.textDim)};
 `;

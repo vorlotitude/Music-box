@@ -18,6 +18,14 @@ const api = {
     ipcRenderer.on("gmb:game-running", (_e, r) => cb(r));
   },
 
+  // League LCU push events (main -> renderer)
+  onLcuPayload: (cb: (snap: Record<string, unknown>) => void) => {
+    ipcRenderer.on("gmb:lcu-payload", (_e, s) => cb(s));
+  },
+  onLcuRunning: (cb: (running: boolean) => void) => {
+    ipcRenderer.on("gmb:lcu-running", (_e, r) => cb(r));
+  },
+
   // Store (CRUD)
   storeAll: (c: string) => ipcRenderer.invoke("gmb:store:all", c),
   storeGet: (c: string, id: string) => ipcRenderer.invoke("gmb:store:get", c, id),
@@ -36,6 +44,7 @@ const api = {
     { path: string; name: string; size: number }[]
   >,
   pickDirectory: () => ipcRenderer.invoke("gmb:dialog:pick-directory") as Promise<string | null>,
+  pickImage: () => ipcRenderer.invoke("gmb:dialog:pick-image") as Promise<string | null>,
   scanDirectory: (dir: string) => ipcRenderer.invoke("gmb:dir:scan-audio", dir) as Promise<
     { path: string; name: string; size: number }[]
   >,
@@ -43,6 +52,13 @@ const api = {
     duration?: number;
   }>,
   toMediaUrl: (absPath: string) => ipcRenderer.invoke("gmb:media:url", absPath) as Promise<string>,
+
+  // Open a video file, then (renderer-side) extract its audio into a music asset.
+  openVideoFiles: () => ipcRenderer.invoke("gmb:dialog:open-video") as Promise<
+    { path: string; name: string; size: number }[]
+  >,
+  saveExtractedAudio: (fileName: string, bytes: ArrayBuffer | Uint8Array) =>
+    ipcRenderer.invoke("gmb:audio:save-extracted", fileName, bytes) as Promise<string>,
 
   // Music Box JSON export / import
   exportJson: (defaultName: string, content: string) =>
@@ -52,6 +68,21 @@ const api = {
   // App control
   minimize: () => ipcRenderer.invoke("gmb:window:minimize"),
   close: () => ipcRenderer.invoke("gmb:window:close"),
+
+  // Commands pushed from main (tray / global shortcuts): { kind } | { kind, to }
+  onCommand: (cb: (cmd: { kind: string; to?: string }) => void) => {
+    ipcRenderer.on("gmb:command", (_e, cmd) => cb(cmd));
+  },
+  // Renderer → main: reflect the live "reaction paused" state into the tray menu.
+  sendReactionPaused: (paused: boolean) =>
+    ipcRenderer.invoke("gmb:reaction:set", paused),
+
+  // Persist a runtime log line to the dated file under userData/logs
+  appendLog: (entry: { ts?: number; kind?: string; message?: string }) =>
+    ipcRenderer.invoke("gmb:log:append", entry),
+
+  // Grant a transient user activation so setSinkId can switch output to the mic.
+  grantUserActivation: () => ipcRenderer.invoke("gmb:grant-activation"),
 };
 
 contextBridge.exposeInMainWorld("gmb", api);

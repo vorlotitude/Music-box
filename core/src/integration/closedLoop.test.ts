@@ -224,4 +224,69 @@ describe("Closed loop: CS2 State → Event → Rule → Audio", () => {
 
     audioEngine.stopDucking();
   });
+
+  it("plays the bound asset when a GSI 1vX CLUTCH is detected (full loop)", async () => {
+    const { adapter, ruleEngine, backend, publish } = buildRuntime();
+    ruleEngine.setRules([
+      rule({ id: "r_clutch", event: "CLUTCH", action: { type: "PLAY_AUDIO", assetId: "clutch.mp3" } }),
+    ]);
+
+    // A live round where the watched player is the only survivor on their team.
+    const clutch = {
+      round: { phase: "live", win_team: "", bomb: "", round: 1 },
+      player: { team: "CT", state: { health: 100, round_kills: 0 } },
+      map: { phase: "live", round: 1 },
+      allplayers: {
+        self: { team: "CT", state: { health: 100 } },
+        ally1: { team: "CT", state: { health: 0 } },
+        e1: { team: "T", state: { health: 100 } },
+        e2: { team: "T", state: { health: 100 } },
+      },
+    };
+    const events = adapter.handlePayload(clutch as never);
+    await publish(events);
+
+    expect(events.map((e) => e.type)).toContain("CLUTCH");
+    expect(backend.played.map((p) => p.url)).toContain("clutch.mp3");
+  });
+
+  it("plays the bound asset when a LoL LCU match ends in a win (full loop, §3)", async () => {
+    // Second concrete game through the SAME pipeline — proves adapters are additive.
+    const lolAdapter = new (await import("../adapters/lol/LolAdapter")).LolAdapter();
+    const engine = new EventEngine();
+    const ruleEngine2 = new RuleEngine();
+    const backend2 = new FakeAudioBackend();
+    const audioEngine2 = new AudioEngine({ backend: backend2 });
+    audioEngine2.setVolumes({ master: 1, music: 1, sfx: 1, voice: 1 });
+    engine.on((e) => {
+      const result = ruleEngine2.evaluate(e);
+      if (result && result.matchedConditions && !result.blockedByCooldown) {
+        const action = result.rule.action;
+        void audioEngine2.play([{
+          action,
+          priority: result.rule.priority,
+          volumeOverride: "volume" in action ? action.volume : undefined,
+        }]);
+      }
+    });
+    ruleEngine2.setRules([
+      rule({ id: "r_lol_win", event: "GAME_END", action: { type: "PLAY_AUDIO", assetId: "victory.mp3" } }),
+    ]);
+
+    // Gameflow reaches InProgress → GAME_START (fresh session).
+    for (const e of lolAdapter.handleSnapshot({ phase: "InProgress" })) engine.dispatch(e);
+    // Match resolves → flat game-stats → GAME_END (win).
+    const stats = {
+      gameId: 9001,
+      summonerId: 555,
+      teams: [{ teamId: 100, isPlayerTeam: true, isWinningTeam: true, players: [{ summonerId: 555, stats: { CHAMPIONS_KILLED: 15, NUM_DEATHS: 2, ASSISTS: 9, WIN: true } }] }],
+    };
+    const ended = lolAdapter.handleSnapshot({ phase: "EndOfGame", stats });
+    expect(ended.map((e) => e.type)).toContain("GAME_END");
+    for (const e of ended) engine.dispatch(e);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(backend2.played.map((p) => p.url)).toContain("victory.mp3");
+  });
 });

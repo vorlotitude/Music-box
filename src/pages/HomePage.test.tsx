@@ -87,16 +87,24 @@ describe("HomePage", () => {
       seed();
       renderPage();
 
-      // The Dev Bar hosts all eight TEST buttons.
+      // The Dev Bar hosts a TEST button for every bindable event type.
       const dev = screen.getByText(/DEVELOPER \/ DEBUG MODE/i).closest("div")!.parentElement!;
       await user.click(within(dev as HTMLElement).getByRole("button", { name: /test kill/i }));
       await user.click(within(dev as HTMLElement).getByRole("button", { name: /test mvp/i }));
       await user.click(within(dev as HTMLElement).getByRole("button", { name: /test grenade/i }));
+      await user.click(within(dev as HTMLElement).getByRole("button", { name: /test headshot/i }));
+      await user.click(within(dev as HTMLElement).getByRole("button", { name: /test clutch/i }));
+      await user.click(within(dev as HTMLElement).getByRole("button", { name: /test flash/i }));
+      await user.click(within(dev as HTMLElement).getByRole("button", { name: /test bomb defuse/i }));
 
-      expect(testEvent).toHaveBeenCalledTimes(3);
+      expect(testEvent).toHaveBeenCalledTimes(7);
       expect(testEvent).toHaveBeenNthCalledWith(1, "PLAYER_KILL");
       expect(testEvent).toHaveBeenNthCalledWith(2, "MVP");
       expect(testEvent).toHaveBeenNthCalledWith(3, "GRENADE_THROW");
+      expect(testEvent).toHaveBeenNthCalledWith(4, "HEADSHOT_KILL");
+      expect(testEvent).toHaveBeenNthCalledWith(5, "CLUTCH");
+      expect(testEvent).toHaveBeenNthCalledWith(6, "FLASH_THROW");
+      expect(testEvent).toHaveBeenNthCalledWith(7, "BOMB_DEFUSED");
     } finally {
       controllerRef.current = null;
     }

@@ -1,5 +1,6 @@
 import type { GameId, UniversalGameEvent } from "../events/GameEvent";
 import type { SessionSnapshot } from "../events/GameEvent";
+import type { AdapterLegalNotes } from "./legalNotes";
 
 export type AdapterState = "disconnected" | "connecting" | "connected" | "error";
 
@@ -22,15 +23,8 @@ export interface GameAdapter {
   /** Human-readable name. */
   name: string;
   state: AdapterState;
-  /** Legal / anti-cheat compatibility notes the app must surface. */
-  readonly legalNotes: {
-    interfaceUsed: string;
-    injectionFree: boolean;
-    memoryReading: boolean;
-    termsChecked: boolean;
-    antiCheatConsiderations: string;
-    knownLimitations: string;
-  };
+  /** Legal / anti-cheat compatibility notes the app must surface (§20). */
+  readonly legalNotes: AdapterLegalNotes;
 
   /** Bootstrap the adapter (bind GSI listener, start detection loops etc). */
   initialize(): Promise<void>;
@@ -54,7 +48,7 @@ export abstract class BaseGameAdapter implements GameAdapter {
   abstract id: GameId;
   abstract name: string;
   abstract state: AdapterState;
-  abstract legalNotes: any;
+  abstract legalNotes: AdapterLegalNotes;
 
   protected eventCallbacks: ((e: UniversalGameEvent) => void)[] = [];
 

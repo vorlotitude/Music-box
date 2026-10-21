@@ -25,12 +25,17 @@ You are not playing the music — **the game is scoring your screen.**
 - **Cross-game adapter architecture.** `CS2Adapter` translates CS2 state into a
   **Universal Game Event** model. Adding VALORANT / PUBG / Apex / LoL later
   only means adding a new adapter — the music, rule and audio systems never
-  change.
+  change. A second concrete adapter, `LolAdapter` (real LCU transport: lockfile
+  discovery + localhost poll in `electron/game/LcuClient`, wired into the main
+  process and GameController on a dedicated channel), already plays audio from a
+  League GAME_END in a full app-layer test (§3).
 - **Music Boxes & Rules.** `WHEN Event + IF conditions THEN play Audio`, with
   priority, cooldown, ducking, volume, random/sequential playback.
 - **User-imported local music.** MP3 / WAV / FLAC / OGG / M4A. The app stores
   *file references + metadata only* — it never copies or re-distributes your
-  files, and never bundles third-party copyrighted music.
+  files, and never bundles third-party copyrighted music. Duration is probed
+  from each file's own headers (WAV/FLAC exact, MP3 VBR/CBR, OGG last-page
+  granule, M4A `moov/mvhd`).
 - **Dark, premium, audio-centric UI.** Spotify-style library IA +
   SFX/DAW density + gaming HUD vibes.
 - **Local-first & private.** Configuration, rules and game state stay on your
@@ -63,7 +68,15 @@ npm run build        # typecheck + renderer + electron + NSIS installer
 npm run build:dir    # same but unpacked folder (no installer)
 ```
 
-Output lands in `release/`.
+Output lands in `release/` (`release/win-unpacked/Game Music Box.exe` for the
+unpacked build, `release/*.exe` for the NSIS installer). On a machine without a
+code-signing cert, disable certificate auto-discovery to produce an unsigned
+build:
+
+```bash
+export CSC_IDENTITY_AUTO_DISCOVERY=false   # PowerShell: $env:CSC_IDENTITY_AUTO_DISCOVERY="false"
+npm run build
+```
 
 ---
 
@@ -75,14 +88,25 @@ npm run test:watch
 npm run typecheck    # strict TS check of renderer + core + electron
 ```
 
-Status: **67 tests passing** — 43 unit tests (event / rule / audio engines, CS2
-adapter incl. GAME_START/END, MATCH_POINT, edge-triggered LOW_HP and
-MULTIKILL / KILLSTREAK streak detection, audio router incl. sequential
-crossfade) plus **6 closed-loop integration tests** that prove the real
-pipeline end-to-end with a fake audio backend, plus 9 application-layer tests
-(GameController, incl. sequential handoff and cooldown reset at match
-boundaries), 3 Music Box import/export tests, 3 folder-scan IPC tests and 3
-RulesPage UI tests (visual rule builder creates/binds rules to a Music Box):
+Status: **220 tests passing** — unit tests (event / rule / audio engines, CS2
+adapter incl. GAME_START/END, MATCH_POINT, edge-triggered LOW_HP, MULTIKILL /
+KILLSTREAK streak detection, GRENADE_THROW / FLASH_THROW / SMOKE_THROW throw
+detection from weapon ammo-reserve drops, and CLUTCH from the opt-in
+`allplayers_state` optic, audio router incl. sequential
+crossfade and true random selection for `PLAY_RANDOM`, and the cross-game
+`LolAdapter` — LCU lockfile discovery + localhost HTTPS poll (`electron/game/
+LcuClient`, transport + mapper both unit-tested) mapping the flat game-stats
+shape onto GAME_START / GAME_END with win-loss + KDA) plus closed-loop
+integration tests that prove the real
+pipeline end-to-end with a fake audio backend, application-layer tests
+(GameController, incl. sequential handoff, cooldown reset at match boundaries,
+notice emission for audio-unavailable / game-disconnect, and playback-history /
+recently-played stats for PLAY_AUDIO / PLAY_RANDOM / PLAY_SEQUENTIAL), Music Box
+import/export tests, folder-scan IPC tests, notice-host UI tests and UI tests
+(§26 hardens: the audio engine also swallows a missing/unavailable *output
+device* and resumes playback once it returns — no crash, no active track); UI tests
+for Home, Library, Music Boxes, Rules (visual rule builder), Audio, Settings
+and Games pages:
 
 ```text
 CS2 GSI payload → CS2Adapter → EventEngine → RuleEngine → AudioEngine → playback
@@ -135,6 +159,7 @@ with:
     "map"                 "1"
     "round"               "1"
     "player_state"        "1"
+    "player_weapons"      "1"
   }
 }
 ```
@@ -154,6 +179,23 @@ In the app, open **Rules → Developer Mode** and fire test events
 (`TEST ROUND WIN`, `TEST KILL`, …) to exercise the whole pipeline
 `Event → Rule → Audio` without launching CS2, while watching a live event /
 rule / audio log.
+
+## Errors never crash the app
+
+Every layer degrades gracefully and the UI surfaces the state (§26): a matched
+rule whose audio file is missing shows an **"Audio unavailable"** toast, a lost
+game connection shows a **"Game disconnected"** toast, and unbound events are
+simply ignored. Audio load/device failures log and end cleanly instead of
+throwing. You can tap the toast to dismiss it.
+
+## Persistent runtime log
+
+All runtime activity — GSI first-contact, game process changes, Engine events,
+rule matches, and audio decisions — is written to a dated file under the app
+user-data directory (`userData/logs/gmb-<YYYY-MM-DD>.log`) in addition to the
+in-app Event Log. Rendering logs are forwarded over IPC and never crash the app
+if the disk is unavailable. This gives you a traceable record for debugging
+matches (Developer Mode / Event logging) outside the UI (§2 / §16).
 
 ---
 

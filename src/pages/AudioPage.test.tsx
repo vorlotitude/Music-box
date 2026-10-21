@@ -61,6 +61,22 @@ describe("AudioPage", () => {
   it("maps the routing intents to concrete sinks", () => {
     renderPage();
     expect(screen.getByText("SELF ONLY")).toBeInTheDocument();
-    expect(screen.getByText("SPEAKER")).toBeInTheDocument(); // sinks for SELF_ONLY
+    // "SPEAKER" appears for the SELF_ONLY route and in the (speaker-default) output node.
+    expect(screen.getAllByText("SPEAKER").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows a pending-driver warning for virtual-mic output until the driver is confirmed", () => {
+    useApp.setState({ settings: { ...useApp.getState().settings, outputTarget: "virtualMic", virtualMicInstalled: false } });
+    const first = renderPage();
+    // Selecting a virtual-mic target while uninstalled must not go silent: the
+    // mixer output node falls back to SPEAKER and a driver-setup pill is shown.
+    expect(screen.getByTestId("pending-virtualMic")).toHaveTextContent("PENDING");
+    expect(screen.getAllByText(/falls back to your speakers/i).length).toBeGreaterThanOrEqual(1);
+
+    // After the user confirms the driver, the same target is live — no pill.
+    first.unmount();
+    useApp.setState({ settings: { ...useApp.getState().settings, virtualMicInstalled: true } });
+    renderPage();
+    expect(screen.queryByTestId("pending-virtualMic")).not.toBeInTheDocument();
   });
 });

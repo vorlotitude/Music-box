@@ -27,6 +27,8 @@ export interface BusVolumes {
 export interface AudioEngineOptions {
   backend: AudioBackend;
   callbacks?: AudioEngineCallbacks;
+  /** Random source for PLAY_RANDOM. Defaults to Math.random; injectable for tests. */
+  rng?: () => number;
 }
 
 interface ActiveTrack {
@@ -51,6 +53,7 @@ interface ActiveTrack {
  */
 export class AudioEngine {
   private readonly backend: AudioBackend;
+  private readonly rng: () => number;
   private callbacks: AudioEngineCallbacks;
   private volumes: BusVolumes = { master: 1, music: 1, sfx: 1, voice: 1 };
   private active = new Map<string, ActiveTrack>();
@@ -62,6 +65,7 @@ export class AudioEngine {
 
   constructor(opts: AudioEngineOptions) {
     this.backend = opts.backend;
+    this.rng = opts.rng ?? Math.random;
     this.callbacks = opts.callbacks ?? {};
   }
 
@@ -108,7 +112,12 @@ export class AudioEngine {
 
     const urls = this.resolveUrls(top.action);
     if (urls.length === 0) return;
-    const url = urls[0];
+    // PLAY_RANDOM must actually pick one of the candidates at random (§6/§7),
+    // never deterministically the first entry.
+    const url =
+      top.action.type === "PLAY_RANDOM"
+        ? urls[Math.floor(this.rng() * urls.length)]
+        : urls[0];
     let record = "";
     const handleId = await this.playTrack(url, top.action, top.priority, top.volumeOverride, route, sinks, () =>
       this.onTrackEnded(record, url),

@@ -10,6 +10,13 @@ export interface MediaFile {
   size: number;
 }
 
+/** A single persistently-written runtime log line. */
+export interface LogLine {
+  ts?: number;
+  kind?: string;
+  message?: string;
+}
+
 export interface GmBridge {
   version: () => Promise<string>;
   dataDir: () => Promise<string>;
@@ -22,6 +29,12 @@ export interface GmBridge {
   settingsSave: (s: Record<string, unknown>) => Promise<Record<string, unknown>>;
   openAudioFiles: () => Promise<MediaFile[]>;
   pickDirectory: () => Promise<string | null>;
+  /** Pick a video file whose audio track is then extracted into a music asset. */
+  openVideoFiles: () => Promise<MediaFile[]>;
+  /** Persist an editor-extracted WAV bytes to a writable userData path; returns its abs path. */
+  saveExtractedAudio: (fileName: string, bytes: ArrayBuffer | Uint8Array) => Promise<string>;
+  /** Pick a single local image (cover art) and return its absolute path. */
+  pickImage: () => Promise<string | null>;
   scanDirectory: (dir: string) => Promise<MediaFile[]>;
   readAudioMeta: (p: string) => Promise<{ duration?: number; bytes?: number }>;
   toMediaUrl: (absPath: string) => Promise<string>;
@@ -29,9 +42,20 @@ export interface GmBridge {
   importJson: () => Promise<{ name: string; content: string } | null>;
   minimize: () => Promise<void>;
   close: () => Promise<void>;
+  /** Commands pushed from the main process (tray / global shortcuts). */
+  onCommand: (cb: (cmd: { kind: string; to?: string }) => void) => void;
+  /** Report the live reaction-paused state so the tray menu label stays accurate. */
+  sendReactionPaused: (paused: boolean) => Promise<void>;
+  appendLog: (entry: LogLine) => Promise<void>;
   onRawPayload: (cb: (payload: Record<string, unknown>) => void) => void;
   onGameRunning: (cb: (running: boolean) => void) => void;
+  /** League LCU snapshot ticks pushed from the main process (§3 LoL adapter transport). */
+  onLcuPayload: (cb: (snap: Record<string, unknown>) => void) => void;
+  /** League client process presence (drives the Games page connection indicator). */
+  onLcuRunning: (cb: (running: boolean) => void) => void;
   onLog: (cb: (entry: { ts: number; msg: string }) => void) => void;
+  /** Grant a transient user activation so setSinkId can switch output to the virtual mic. */
+  grantUserActivation: () => Promise<boolean>;
 }
 
 declare global {
@@ -75,6 +99,9 @@ function createMock(): GmBridge {
     },
     openAudioFiles: async () => [],
     pickDirectory: async () => null,
+    openVideoFiles: async () => [],
+    saveExtractedAudio: async (fileName) => `mock://audio/${fileName}`,
+    pickImage: async () => null,
     scanDirectory: async () => [],
     readAudioMeta: async () => ({ duration: undefined }),
     toMediaUrl: async (p) => p,
@@ -82,9 +109,15 @@ function createMock(): GmBridge {
     importJson: async () => null,
     minimize: async () => void 0,
     close: async () => void 0,
+    onCommand: () => void 0,
+    sendReactionPaused: async () => void 0,
+    appendLog: async () => void 0,
     onRawPayload: () => void 0,
     onGameRunning: () => void 0,
+    onLcuPayload: () => void 0,
+    onLcuRunning: () => void 0,
     onLog: () => void 0,
+    grantUserActivation: async () => true,
   };
 }
 

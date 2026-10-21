@@ -14,6 +14,8 @@ export class ProcessMonitor {
     private names: string[],
     private onChange: (running: boolean, processName?: string) => void,
     private onError?: (err: Error) => void,
+    /** Injectable process probe (defaults to the OS tasklist). */
+    private probe: (names: string[]) => Promise<Set<string>> = getRunningProcess,
   ) {
     this.polling = false;
   }
@@ -33,7 +35,7 @@ export class ProcessMonitor {
     if (this.polling) return;
     this.polling = true;
     try {
-      const found = await getRunningProcess(this.names);
+      const found = await this.probe(this.names);
       for (let i = 0; i < this.names.length; i++) {
         const name = this.names[i];
         const running = found.has(name);

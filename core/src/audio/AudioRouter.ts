@@ -36,3 +36,33 @@ export function includesSelf(route: AudioRoute): boolean {
 export function feedsVoiceChat(route: AudioRoute): boolean {
   return routeToSinks(route).includes("VOICE_CHAT");
 }
+
+/**
+ * The player's chosen mix destination in Settings/Audio.
+ * - `speaker`    → the player's own headphones / speakers.
+ * - `virtualMic` → only the voice-chat input (virtual mic) for teammates.
+ * - `both`       → the player's own output AND the virtual mic.
+ */
+export type OutputTarget = "speaker" | "virtualMic" | "both";
+
+/** Whether choosing this output target requires the (opt-in) virtual driver. */
+export function outputNeedsVirtualMic(target: OutputTarget): boolean {
+  return target === "virtualMic" || target === "both";
+}
+
+/**
+ * The concrete physical sink(s) a mix lands on for a chosen output target.
+ *
+ * The virtual microphone is a separate, opt-in Windows loopback driver. Until
+ * it is installed and confirmed, any virtual-mic selection must never silently
+ * drop audio or fail — it falls back to the player's own speakers, and the UI
+ * surfaces the pending setup (§8 install/consent step).
+ */
+export function effectiveOutputSinks(
+  target: OutputTarget,
+  virtualMicInstalled: boolean,
+): AudioSink[] {
+  if (target === "speaker") return ["SPEAKER"];
+  if (!virtualMicInstalled) return ["SPEAKER"]; // honest fallback, never a silent drop
+  return target === "virtualMic" ? ["VOICE_CHAT"] : ["SPEAKER", "VOICE_CHAT"];
+}

@@ -113,6 +113,35 @@ describe("MusicBoxesPage", () => {
       expect(screen.queryByText("Chaotic Victory")).not.toBeInTheDocument();
     });
   });
+
+  it("AI Generate: turns a prompt into a box and applies it (§22)", async () => {
+    const user = userEvent.setup();
+    seed();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: /AI Generate/i }));
+    await user.type(screen.getByTestId("ai-prompt"), "输五把以后给我放最搞笑的音乐");
+    await user.click(screen.getByRole("button", { name: /^generate$/i }));
+
+    // Preview appears with the mapped event and a loss-streak condition.
+    const preview = screen.getByTestId("ai-preview");
+    expect(within(preview as HTMLElement).getByText("ROUND_LOSS")).toBeInTheDocument();
+    expect(within(preview as HTMLElement).getByText(/lossStreak/i)).toBeInTheDocument();
+
+    // Applying it writes a box + its rules into the store.
+    const apply = screen.getByTestId("ai-apply");
+    expect(apply).toBeEnabled();
+    await user.click(apply);
+
+    await waitFor(() => {
+      const { boxes, rules } = useApp.getState();
+      const created = boxes.find((b) => b.name.includes("Meme"));
+      expect(created).toBeTruthy();
+      const rule = rules.find((r) => r.id === created!.rules[0]);
+      expect(rule?.event).toBe("ROUND_LOSS");
+      expect(rule?.conditions[0]?.value).toBe(5);
+    });
+  });
 });
 
 function getDeleteButton(name: string): HTMLElement {

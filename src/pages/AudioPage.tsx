@@ -1,42 +1,46 @@
 import styled from "styled-components";
-import { Headphones, Disc3, Volume2, Route, Info } from "lucide-react";
+import { Headphones, Disc3, Volume2, Route } from "lucide-react";
 import { useApp } from "../state/useApp";
 import { PageHeader, Title, Subtitle, Card, Grid, Pill, Muted } from "../components/ui";
-import { routeToSinks } from "@core/audio/AudioRouter";
+import { VirtualMicSetup } from "../components/VirtualMicSetup";
+import { useT } from "../i18n";
+import { routeToSinks, effectiveOutputSinks, outputNeedsVirtualMic } from "@core/audio/AudioRouter";
+import type { OutputTarget } from "@core/audio/AudioRouter";
 import type { AudioRoute } from "@core/events/GameEvent";
 
 /** Per-route delivery summary, straight from the core audio router. */
-const ROUTE_PREVIEW: { route: AudioRoute; label: string; blurb: string }[] = [
-  { route: "SELF_ONLY", label: "SELF ONLY", blurb: "Only you hear it — sent to your speaker output." },
-  { route: "TEAMMATES", label: "TEAMMATES", blurb: "Sent to the voice-chat input (virtual mic); not audible to you by design." },
-  { route: "BOTH", label: "BOTH", blurb: "Heard by you AND routed to the voice-chat input." },
+const ROUTE_PREVIEW: { route: AudioRoute; labelKey: string; blurbKey: string }[] = [
+  { route: "SELF_ONLY", labelKey: "audio.routeSelf", blurbKey: "audio.routeSelfBlurb" },
+  { route: "TEAMMATES", labelKey: "audio.routeTeammates", blurbKey: "audio.routeTeammatesBlurb" },
+  { route: "BOTH", labelKey: "audio.routeBoth", blurbKey: "audio.routeBothBlurb" },
 ];
 
 const OUTPUT_OPTIONS = [
-  { key: "speaker", label: "Headphones / Speakers", blurb: "Straight to your own output device." },
-  { key: "both", label: "Both", blurb: "Your output + the virtual microphone (teammates hear it)." },
-  { key: "virtualMic", label: "Virtual Microphone", blurb: "Delivered to the virtual mic device so your team hears it. Needs a separate, opt-in driver." },
+  { key: "speaker", labelKey: "audio.outSpeakers", blurbKey: "audio.outSpeakersBlurb" },
+  { key: "both", labelKey: "audio.outBoth", blurbKey: "audio.outBothBlurb" },
+  { key: "virtualMic", labelKey: "audio.outVirtual", blurbKey: "audio.outVirtualBlurb" },
 ] as const;
 
 export function AudioPage() {
+  const t = useT();
   const settings = useApp((s) => s.settings);
   const saveSettings = useApp((s) => s.saveSettings);
   const playing = useApp((s) => s.playing);
 
   const buses = [
-    { key: "Music", v: settings.musicVolume, accent: "#9b6cff" },
-    { key: "SFX", v: settings.sfxVolume, accent: "#ff8b5c" },
-    { key: "Voice", v: settings.voiceVolume, accent: "#2ce08a" },
+    { key: "music", labelKey: "audio.musicBus", v: settings.musicVolume, accent: "#9b6cff" },
+    { key: "sfx", labelKey: "audio.sfxBus", v: settings.sfxVolume, accent: "#ff8b5c" },
+    { key: "voice", labelKey: "audio.voiceBus", v: settings.voiceVolume, accent: "#2ce08a" },
   ] as const;
 
-  const setOutput = (k: (typeof OUTPUT_OPTIONS)[number]["key"]) => saveSettings({ outputTarget: k });
+  const setOutput = (k: OutputTarget) => saveSettings({ outputTarget: k });
 
   return (
     <div>
       <PageHeader>
         <div>
-          <Title>Audio</Title>
-          <Subtitle>The mixer that turns game events into your soundtrack — and decides who hears it.</Subtitle>
+          <Title>{t("audio.title")}</Title>
+          <Subtitle>{t("audio.subtitle")}</Subtitle>
         </div>
       </PageHeader>
 
@@ -44,8 +48,8 @@ export function AudioPage() {
       <Card style={{ margin: "0 20px" }}>
         <MixerTitle>
           <Disc3 size={15} />
-          <span>MIXER</span>
-          <Pill tone="dim" style={{ marginLeft: "auto" }}>{playing ? "● playing" : "○ idle"}</Pill>
+          <span>{t("audio.mixerNode")}</span>
+          <Pill tone="dim" style={{ marginLeft: "auto" }}>{playing ? "● " + t("common.playing") : "○ " + t("common.idle")}</Pill>
         </MixerTitle>
         <MixerFlow>
           <BusCol>
@@ -54,7 +58,7 @@ export function AudioPage() {
                 <BusTrack $accent={b.accent}>
                   <div className="fill" style={{ width: `${Math.round(b.v * 100)}%` }} />
                 </BusTrack>
-                <span>{b.key}</span>
+                <span>{t(b.labelKey)}</span>
                 <b>{Math.round(b.v * 100)}%</b>
               </BusRow>
             ))}
@@ -62,61 +66,67 @@ export function AudioPage() {
           <FlowArrow>→</FlowArrow>
           <MixerNode>
             <Volume2 size={16} />
-            <b>MIXER</b>
-            <span>{Math.round(settings.masterVolume * 100)}% master{settings.ducking ? " · duck: ON" : ""}</span>
+            <b>{t("audio.mixerNode")}</b>
+            <span>
+              {t("audio.master", { n: Math.round(settings.masterVolume * 100) })}
+              {settings.ducking ? t("audio.duckOn") : ""}
+            </span>
           </MixerNode>
           <FlowArrow>→</FlowArrow>
           <OutNode>
             <Headphones size={16} />
-            <b>OUTPUT</b>
-            <span>{OUTPUT_OPTIONS.find((o) => o.key === settings.outputTarget)?.label}</span>
+            <b>{t("audio.outputNode")}</b>
+            <span>
+              {effectiveOutputSinks(settings.outputTarget, settings.virtualMicInstalled).join(" + ") ||
+                t(OUTPUT_OPTIONS.find((o) => o.key === settings.outputTarget)?.labelKey ?? "")}
+            </span>
           </OutNode>
         </MixerFlow>
         <Muted style={{ fontSize: 12, display: "block", marginTop: 10 }}>
-          Microphone input joins the mix here. When you speak and Ducking is on, the music/SFX buses dip to the duck level automatically; they restore when you stop.
+          {t("audio.mixerHelp")}
         </Muted>
       </Card>
 
       {/* Output target */}
-      <SectionTitle>Output</SectionTitle>
+      <SectionTitle>{t("audio.outputTitle")}</SectionTitle>
       <Grid cols={3}>
         {OUTPUT_OPTIONS.map((o) => {
           const active = settings.outputTarget === o.key;
+          const needsMic = outputNeedsVirtualMic(o.key as OutputTarget);
+          const pending = needsMic && !settings.virtualMicInstalled;
           return (
             <OutCard key={o.key} $active={active} as="button" onClick={() => setOutput(o.key)}>
-              <Pill tone={active ? "ok" : "dim"}>{active ? "SELECTED" : "OPTION"}</Pill>
-              <b>{o.label}</b>
-              <span>{o.blurb}</span>
+              <Pill tone={active ? "ok" : "dim"}>{active ? t("audio.selected") : t("audio.option")}</Pill>
+              {pending && <Pill tone="bad" data-testid={`pending-${o.key}`}>{t("audio.pendingDriver")}</Pill>}
+              <b>{t(o.labelKey)}</b>
+              <span>{t(o.blurbKey)}</span>
+              {pending && (
+                <Muted style={{ fontSize: 11 }}>
+                  {t("audio.pendingBlurb")}
+                </Muted>
+              )}
             </OutCard>
           );
         })}
       </Grid>
 
       {/* Per-rule routing intent */}
-      <SectionTitle>Routing — how reactions are delivered</SectionTitle>
+      <SectionTitle>{t("audio.routingTitle")}</SectionTitle>
       <Grid cols={3}>
         {ROUTE_PREVIEW.map((r) => (
           <Card key={r.route}>
             <RouteHead>
               <Route size={14} />
-              <b>{r.label}</b>
+              <b>{t(r.labelKey)}</b>
               <span>{routeToSinks(r.route).join(" + ")}</span>
             </RouteHead>
-            <Muted style={{ fontSize: 12, lineHeight: 1.5 }}>{r.blurb}</Muted>
+            <Muted style={{ fontSize: 12, lineHeight: 1.5 }}>{t(r.blurbKey)}</Muted>
           </Card>
         ))}
       </Grid>
 
-      <Card style={{ margin: "0 20px" }}>
-        <H>
-          <Info size={14} /> About the Virtual Microphone
-        </H>
-        <Ul>
-          <li>Virtual mic is a <b>separate, opt-in driver component</b> — selecting it here doesn't install anything.</li>
-          <li>It never bypasses game voice, permissions, or anti-cheat; it is a plain Windows audio device.</li>
-          <li>Until a virtual mic is present, output safely falls back to your speakers/headphones.</li>
-        </Ul>
-      </Card>
+      <SectionTitle>{t("audio.virtualMicTitle")}</SectionTitle>
+      <VirtualMicSetup />
     </div>
   );
 }
@@ -182,14 +192,4 @@ const RouteHead = styled.div`
   display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
   b { font-size: 13px; flex: 1; }
   span { font-size: 11px; color: ${({ theme }) => theme.accentWarm}; text-transform: uppercase; letter-spacing: .03em; }
-`;
-
-const H = styled.h4`
-  display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 12px;
-  color: ${({ theme }) => theme.textSoft};
-`;
-
-const Ul = styled.ul`
-  list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: ${({ theme }) => theme.textSoft};
-  li::before { content: "•  "; color: ${({ theme }) => theme.accent}; }
 `;

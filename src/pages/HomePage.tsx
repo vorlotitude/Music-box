@@ -2,8 +2,9 @@ import styled from "styled-components";
 import { Activity, Crosshair, Zap, Rows3 } from "lucide-react";
 import { useApp } from "../state/useApp";
 import { controllerRef } from "../state/AppProvider";
-import { PageHeader, Title, Subtitle, Card, Grid, Pill, Button } from "../components/ui";
+import { PageHeader, Title, Subtitle, Card, Grid, Pill, Button, Muted } from "../components/ui";
 import dayjs from "dayjs";
+import { useT } from "../i18n";
 
 const TEST_EVENTS = [
   ["ROUND WIN", "ROUND_WIN"],
@@ -11,17 +12,26 @@ const TEST_EVENTS = [
   ["ROUND START", "ROUND_START"],
   ["KILL", "PLAYER_KILL"],
   ["DEATH", "PLAYER_DEATH"],
+  ["HEADSHOT", "HEADSHOT_KILL"],
+  ["ASSIST", "PLAYER_ASSIST"],
   ["MVP", "MVP"],
+  ["CLUTCH", "CLUTCH"],
   ["GRENADE", "GRENADE_THROW"],
+  ["FLASH", "FLASH_THROW"],
+  ["SMOKE", "SMOKE_THROW"],
   ["BOMB PLANT", "BOMB_PLANTED"],
+  ["BOMB DEFUSE", "BOMB_DEFUSED"],
+  ["MATCH POINT", "MATCH_POINT"],
 ] as const;
 
 export function HomePage() {
+  const t = useT();
   const session = useApp((s) => s.session);
   const boxes = useApp((s) => s.boxes);
   const rules = useApp((s) => s.rules);
   const log = useApp((s) => s.log);
   const gameConnected = useApp((s) => s.gameConnected);
+  const paused = useApp((s) => s.paused);
   const gameName = "CS2";
 
   const activeBox = boxes.filter((b) => b.enabled)[0];
@@ -29,30 +39,43 @@ export function HomePage() {
     .map((id) => rules.find((r) => r.id === id))
     .filter((r): r is NonNullable<typeof r> => !!r);
 
+  const lastEvent = [...log].reverse().find((e) => e.kind === "event")?.message;
+
   const stats: { label: string; value: number | string; kind: "ok" | "bad" | "accent" }[] = [
-    { label: "Kills", value: session.kills, kind: "accent" },
-    { label: "Deaths", value: session.deaths, kind: "bad" },
-    { label: "Wins", value: session.wins, kind: "ok" },
-    { label: "Losses", value: session.losses, kind: "bad" },
+    { label: t("home.kills"), value: session.kills, kind: "accent" },
+    { label: t("home.deaths"), value: session.deaths, kind: "bad" },
+    { label: t("home.wins"), value: session.wins, kind: "ok" },
+    { label: t("home.losses"), value: session.losses, kind: "bad" },
   ];
 
   return (
     <div>
       <PageHeader>
         <div>
-          <Title>Home</Title>
-          <Subtitle>Live game dashboard. Your events, your soundtrack.</Subtitle>
+          <Title>{t("home.title")}</Title>
+          <Subtitle>{t("home.subtitle")}</Subtitle>
         </div>
         <Pill tone={gameConnected ? "ok" : "bad"}>
-          {gameConnected ? "● Connected" : "○ Disconnected"}
+          {gameConnected ? "● " + t("common.connected") : "○ " + t("common.disconnected")}
         </Pill>
       </PageHeader>
+
+      <Hud>
+        <div>
+          <Muted style={{ fontSize: 11 }}>{t("home.currentEvent")}</Muted>
+          <b>{lastEvent ?? t("home.noEvent")}</b>
+        </div>
+        <div>
+          <Muted style={{ fontSize: 11 }}>{t("home.reaction")}</Muted>
+          <b className={paused ? "warn" : "ok"}>{paused ? t("status.paused") : t("status.live")}</b>
+        </div>
+      </Hud>
 
       <Grid cols={2}>
         <Card>
           <CardHead>
             <Crosshair size={16} />
-            <span>Current Session · {gameName}</span>
+            <span>{t("home.sessionTitle", { name: gameName })}</span>
           </CardHead>
           <StatGrid>
             {stats.map((s) => (
@@ -67,7 +90,7 @@ export function HomePage() {
         <Card>
           <CardHead>
             <BoxIcon />
-            <span>Active Music Box</span>
+            <span>{t("home.boxCard")}</span>
           </CardHead>
           {activeBox ? (
             <div>
@@ -81,7 +104,7 @@ export function HomePage() {
               </RuleTicks>
             </div>
           ) : (
-            <Empty>No active music box. Create one to react to events.</Empty>
+            <Empty>{t("home.boxEmpty")}</Empty>
           )}
         </Card>
       </Grid>
@@ -89,13 +112,13 @@ export function HomePage() {
       <DevBar>
         <DevHead>
           <Zap size={15} />
-          <b>DEVELOPER / DEBUG MODE</b>
-          <span>Manually trigger events to test your rules end-to-end</span>
+          <b>{t("home.devTitle")}</b>
+          <span>{t("home.devSubtitle")}</span>
         </DevHead>
         <TestRow>
           {TEST_EVENTS.map(([label, type]) => (
             <TestBtn key={type} onClick={() => controllerRef.current?.testEvent(type)}>
-              TEST {label}
+              {t("home.testPrefix", { label })}
             </TestBtn>
           ))}
         </TestRow>
@@ -104,10 +127,10 @@ export function HomePage() {
       <LogPanel>
         <LogHead>
           <Rows3 size={15} />
-          <b>REAL-TIME EVENT LOG</b>
+          <b>{t("home.logTitle")}</b>
         </LogHead>
         <LogBody>
-          {log.length === 0 && <Empty>No events yet. Start CS2 with GSI enabled, or hit a TEST button.</Empty>}
+          {log.length === 0 && <Empty>{t("home.logEmpty")}</Empty>}
           {log.map((e, i) => (
             <LogRow key={i} tone={e.kind}>
               <time>{dayjs(e.ts).format("HH:mm:ss")}</time>
@@ -156,6 +179,21 @@ const RuleTicks = styled.div`
 
 const Empty = styled.div`
   color: ${({ theme }) => theme.textDim}; font-size: 13px; padding: 8px 0;
+`;
+
+const Hud = styled.div`
+  display: flex; align-items: stretch; gap: 14px;
+  margin: 0 24px 18px;
+  > div {
+    flex: 1; display: flex; flex-direction: column; gap: 3px;
+    background: ${({ theme }) => theme.bgElev};
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: ${({ theme }) => theme.radiusSm};
+    padding: 12px 16px;
+    b { font-family: ${({ theme }) => theme.fontDisplay}; font-size: 15px; font-weight: 700; }
+    b.ok { color: ${({ theme }) => theme.success}; }
+    b.warn { color: ${({ theme }) => theme.warning}; }
+  }
 `;
 
 const DevBar = styled.div`

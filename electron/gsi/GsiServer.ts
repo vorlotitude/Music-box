@@ -44,13 +44,15 @@ export class GsiServer {
 
   stop(): Promise<void> {
     return new Promise((resolve) => {
-      if (!this.server) return resolve();
-      this.server.close(() => resolve());
+      const server = this.server;
+      if (!server) return resolve();
+      this.server = null;
+      server.close(() => resolve());
     });
   }
 
   get isRunning(): boolean {
-    return !!this.server;
+    return this.server !== null;
   }
 
   get lastContacted(): boolean {
@@ -80,8 +82,9 @@ export class GsiServer {
       try {
         const raw = Buffer.concat(chunks).toString("utf-8");
         const body = JSON.parse(raw);
+        const first = !this.received;
         this.received = true;
-        this.callbacks.onFirstContact?.();
+        if (first) this.callbacks.onFirstContact?.();
         this.callbacks.onPayload(body);
       } catch {
         // Ignore malformed JSON — a single bad push should never crash the app.

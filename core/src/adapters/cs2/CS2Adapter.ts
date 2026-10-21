@@ -5,6 +5,7 @@ import {
   SessionSnapshot,
 } from "../../events/GameEvent";
 import { BaseGameAdapter, AdapterState } from "../GameAdapter";
+import { legalNotesFor } from "../legalNotes";
 
 /**
  * CS2 Game State Integration (GSI) adapter.
@@ -43,7 +44,11 @@ interface Cs2Payload {
       kill?: number;
       death?: number;
     };
+    /** Current-held weapons; grenades carry an ammo_reserve that decrements on throw. */
+    weapons?: Record<string, { name?: string; ammo_reserve?: number }>;
   };
+  /** Every player in the lobby (optic: allplayers_state). Used to detect CLUTCH. */
+  allplayers?: Record<string, { team?: string; state?: { health?: number } }>;
   map?: {
     phase?: string;
     round?: number;
@@ -66,16 +71,7 @@ export class CS2Adapter extends BaseGameAdapter {
   name = "CS2";
   state: AdapterState = "disconnected";
 
-  readonly legalNotes = {
-    interfaceUsed: "Valve Game State Integration (official HTTP status push)",
-    injectionFree: true,
-    memoryReading: false,
-    termsChecked: false, // revisit for exact Valve policy
-    antiCheatConsiderations:
-      "Uses only the public GSI endpoint; no memory/injection. Per Valve, GSI is a supported developer interface.",
-    knownLimitations:
-      "Requires user to add gamestate_integration_*.cfg to their CS2 cfg folder. Some events (e.g. exact kill victim) are not exposed by GSI.",
-  };
+  readonly legalNotes = legalNotesFor("cs2");
 
   private prev: {
     roundPhase?: string;
@@ -90,6 +86,10 @@ export class CS2Adapter extends BaseGameAdapter {
     matchPoint?: boolean;
     killStreak?: number;
     lastKillTime?: number;
+    /** Whether the loadout tracker has a persisted snapshot of last-seen weapons. */
+    prevWeapons?: Record<string, { name?: string; ammo_reserve?: number }>;
+    /** Edge-trigger guard so CLUTCH fires once per round (reset on freezetime). */
+    clutchFired?: boolean;
   } = {};
   private session: SessionSnapshot = {
     kills: 0, deaths: 0, assists: 0, wins: 0, losses: 0,
@@ -151,6 +151,26 @@ export class CS2Adapter extends BaseGameAdapter {
     const state = player.state ?? {};
     const p = this.prev;
 
+    // CLUTCH detection: when we are the only surviving player on our team in a
+    // live round (a "1vX" situation). Edge-triggered once per round via
+    // `clutchFired`, which freezetime armed the next round. Uses only the
+    // opt-in `allplayers_state` GSI optic — no memory reads, no injection.
+    const allPlayers = payload.allplayers;
+    if (allPlayers && (round.phase === "live" || round.phase === "bomb")) {
+      const ourTeam = (player.team || "CT") as TeamId;
+      let aliveOnTeam = 0;
+      for (const ap of Object.values(allPlayers)) {
+        if (!ap || ap.team !== ourTeam) continue;
+        if (typeof ap.state?.health === "number" && ap.state.health > 0) aliveOnTeam += 1;
+      }
+      const selfAlive = typeof state.health === "number" ? state.health > 0 : true;
+      // ≤1 accounts for GSI including the watched player in `allplayers`.
+      if (selfAlive && aliveOnTeam <= 1 && !p.clutchFired) {
+        p.clutchFired = true;
+        events.push(this.make("CLUTCH", { teammatesActive: aliveOnTeam - (selfAlive && aliveOnTeam > 0 ? 1 : 0) }));
+      }
+    }
+
     // Map / match transitions
     const mapPhase = payload.map?.phase;
     if (mapPhase && mapPhase !== p.mapPhase) {
@@ -184,6 +204,8 @@ export class CS2Adapter extends BaseGameAdapter {
         // A fresh round resets the current kill streak.
         p.killStreak = 0;
         p.lastKillTime = undefined;
+        // Re-arm CLUTCH edge-trigger for the upcoming round.
+        p.clutchFired = false;
       }
       if (newPhase === "live" && (p.roundPhase === "freezetime")) {
         this.session.gamePhase = "live";
@@ -267,6 +289,32 @@ export class CS2Adapter extends BaseGameAdapter {
       if (bomb === "planted") events.push(this.make("BOMB_PLANTED"));
       if (bomb === "defused") events.push(this.make("BOMB_DEFUSED"));
       p.bomb = bomb;
+    }
+
+    // Detect grenade throws by ammo reserve decreasing (0 after throw).
+    // This is the only public signal in GSI when you actually throw a grenade.
+    const weapons = payload.player?.weapons;
+    if (weapons && typeof p.prevWeapons === "object" && p.prevWeapons != null) {
+      for (const [slot, wp] of Object.entries(weapons)) {
+        const prev = p.prevWeapons[slot];
+        if (!prev || !wp || typeof prev.ammo_reserve !== "number" || typeof wp.ammo_reserve !== "number") continue;
+        if (wp.ammo_reserve < prev.ammo_reserve) {
+          // throw confirmed; classify by name if possible
+          const name = (wp.name ?? "").toLowerCase();
+          if (name.includes("flash") || name.includes("bang")) {
+            events.push(this.make("FLASH_THROW"));
+          } else if (name.includes("smoke")) {
+            events.push(this.make("SMOKE_THROW"));
+          } else {
+            // molotov/he/greande still counts as a GRENADE_THROW
+            events.push(this.make("GRENADE_THROW"));
+          }
+        }
+      }
+    }
+    if (weapons) {
+      // snapshot weapons for next comparison
+      p.prevWeapons = { ...weapons };
     }
 
     // Match point: our team is one round win away from winning the match.
@@ -354,6 +402,10 @@ function normalizeTestType(type: string): GameEventType {
   if (upper.includes("ROUND") && upper.includes("WIN")) return "ROUND_WIN";
   if (upper.includes("ROUND") && upper.includes("LOSS")) return "ROUND_LOSS";
   if (upper.includes("ROUND")) return "ROUND_START";
+  // ASSIST and HEADSHOT must be matched before the generic KILL branch, since
+  // "PLAYER_ASSIST" / "HEADSHOT_KILL" do not normalize to a plain kill.
+  if (upper.includes("ASSIST")) return "PLAYER_ASSIST";
+  if (upper.includes("HEADSHOT")) return "HEADSHOT_KILL";
   if (upper.includes("KILL")) return "PLAYER_KILL";
   if (upper.includes("DEATH")) return "PLAYER_DEATH";
   if (upper.includes("MVP")) return "MVP" as GameEventType;

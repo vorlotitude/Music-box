@@ -31,6 +31,12 @@ export interface AudioAsset {
   playCount: number;
   /** Mongo-like metadata blob for forward-compat (advanced mode). */
   meta?: Record<string, unknown>;
+  /**
+   * Optional granted license (§19). User-imported files carry none; only a real,
+   * future official Music Pack grant attaches one. When present and covered,
+   * the UI may show "Licensed for Game Music Box".
+   */
+  license?: import("../pack/TrackLicense").TrackLicense;
 }
 
 export interface PlaybackHistoryEntry {

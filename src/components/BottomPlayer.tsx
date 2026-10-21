@@ -1,10 +1,14 @@
 import styled from "styled-components";
-import { Play, Square, Volume2 } from "lucide-react";
+import { Play, Square, Volume2, Pause } from "lucide-react";
 import { useApp } from "../state/useApp";
 import { controllerRef } from "../state/AppProvider";
+import { useT } from "../i18n";
 
 export function BottomPlayer() {
+  const t = useT();
   const playing = useApp((s) => s.playing);
+  const paused = useApp((s) => s.paused);
+  const setPaused = useApp((s) => s.setPaused);
   const settings = useApp((s) => s.settings);
   const saveSettings = useApp((s) => s.saveSettings);
 
@@ -18,30 +22,37 @@ export function BottomPlayer() {
             <Art>{playing.title.charAt(0).toUpperCase()}</Art>
             <div>
               <b className="nowrap">{playing.title}</b>
-              <span className="nowrap">Now playing via Game Music Box</span>
+              <span className="nowrap">{t("player.nowPlaying")}</span>
             </div>
           </>
         ) : (
           <>
-            <Art dim>♪</Art>
+            <Art dim>{paused ? "⏸" : "♪"}</Art>
             <div>
-              <b>Idle</b>
-              <span>Waiting for a game event…</span>
+              <b>{paused ? t("status.paused") : t("player.idle")}</b>
+              <span>{t("player.waiting")}</span>
             </div>
           </>
         )}
       </NowPlaying>
 
       <Transport>
-        {playing ? (
-          <Action onClick={() => controllerRef.current?.stopAll()}>
-            <Square size={16} />
-          </Action>
-        ) : (
-          <Action disabled>
+        {paused ? (
+          <Action onClick={() => void setPaused(false)} title={t("player.resume")}>
             <Play size={16} />
           </Action>
+        ) : (
+          <Action onClick={() => void setPaused(true)} title={t("player.pauseReaction")}>
+            <Pause size={16} />
+          </Action>
         )}
+        <StopAction
+          onClick={() => controllerRef.current?.stopAll()}
+          title={t("player.stop")}
+          disabled={!playing}
+        >
+          <Square size={14} />
+        </StopAction>
       </Transport>
 
       <Volume>
@@ -85,13 +96,23 @@ const Art = styled.div<{ dim?: boolean }>`
   display: grid; place-items: center; font-weight: 800; color: #fff;
 `;
 
-const Transport = styled.div``;
+const Transport = styled.div`
+  display: flex; align-items: center; gap: 12px;
+`;
 
 const Action = styled.button`
   width: 46px; height: 46px; border-radius: 50%;
   background: ${({ theme }) => theme.text}; color: #000; border: none;
   display: grid; place-items: center;
   &:disabled { opacity: .3; cursor: default; }
+`;
+
+const StopAction = styled.button`
+  width: 40px; height: 40px; border-radius: 50%;
+  background: ${({ theme }) => theme.bgElev2}; color: ${({ theme }) => theme.textSoft}; border: none;
+  display: grid; place-items: center;
+  &:disabled { opacity: .3; cursor: default; }
+  &:not(:disabled):hover { color: ${({ theme }) => theme.text}; }
 `;
 
 const Volume = styled.div`

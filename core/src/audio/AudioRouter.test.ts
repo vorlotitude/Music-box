@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { routeToSinks, includesSelf, feedsVoiceChat } from "./AudioRouter";
+import {
+  routeToSinks,
+  includesSelf,
+  feedsVoiceChat,
+  outputNeedsVirtualMic,
+  effectiveOutputSinks,
+} from "./AudioRouter";
 
 describe("AudioRouter", () => {
   it("routes SELF_ONLY to the player's own output only", () => {
@@ -18,5 +24,24 @@ describe("AudioRouter", () => {
     expect(routeToSinks("BOTH")).toEqual(["SPEAKER", "VOICE_CHAT"]);
     expect(includesSelf("BOTH")).toBe(true);
     expect(feedsVoiceChat("BOTH")).toBe(true);
+  });
+
+  it("only virtual-mic output targets need the opt-in driver", () => {
+    expect(outputNeedsVirtualMic("speaker")).toBe(false);
+    expect(outputNeedsVirtualMic("virtualMic")).toBe(true);
+    expect(outputNeedsVirtualMic("both")).toBe(true);
+  });
+
+  it("falls back to speakers until the virtual microphone driver is installed", () => {
+    // Not installed: any virtual-mic choice is an honest speaker fallback.
+    expect(effectiveOutputSinks("speaker", false)).toEqual(["SPEAKER"]);
+    expect(effectiveOutputSinks("virtualMic", false)).toEqual(["SPEAKER"]);
+    expect(effectiveOutputSinks("both", false)).toEqual(["SPEAKER"]);
+  });
+
+  it("routes to the virtual mic only once installed and confirmed", () => {
+    expect(effectiveOutputSinks("virtualMic", true)).toEqual(["VOICE_CHAT"]);
+    expect(effectiveOutputSinks("both", true)).toEqual(["SPEAKER", "VOICE_CHAT"]);
+    expect(effectiveOutputSinks("speaker", true)).toEqual(["SPEAKER"]);
   });
 });

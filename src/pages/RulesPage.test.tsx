@@ -9,7 +9,7 @@
  * so `reloadRules()` is a no-op.
  */
 import { describe, it, expect } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -53,7 +53,7 @@ describe("RulesPage visual rule builder", () => {
     expect(screen.getByText("NEW RULE")).toBeInTheDocument();
     const assetPick = selects()[2];
     await waitFor(() => expect(assetPick).toHaveValue("a1"));
-    expect(screen.getByText("Victory")).toBeInTheDocument();
+    expect(screen.getAllByText("Victory").length).toBeGreaterThan(0); // chip + option
   });
 
   it("creates a rule for the chosen event and binds it to the selected box", async () => {
@@ -83,6 +83,46 @@ describe("RulesPage visual rule builder", () => {
       expect(bx.rules).toContain(rules[0].id);
       expect(bx.rules.length).toBe(1);
     });
+  });
+
+  it("binds the reaction by dragging a track onto the slot (§14)", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    useApp.setState({
+      assets: [asset, { ...asset, id: "a2", title: "Clown", category: "sfx" }],
+    });
+    const dt: any = (() => {
+      const m = new Map<string, string>();
+      return {
+        setData: (k: string, v: string) => m.set(k, v),
+        getData: (k: string) => m.get(k) ?? "",
+        types: [], effectAllowed: "", dropEffect: "",
+      };
+    })();
+
+    fireEvent.dragStart(await screen.findByTitle("Clown"), { dataTransfer: dt });
+    fireEvent.drop(screen.getByTestId("then-slot"), { dataTransfer: dt });
+
+    await waitFor(() => expect(selects()[2]).toHaveValue("a2"));
+    await userEvent.click(screen.getByRole("button", { name: /create rule/i }));
+    await waitFor(() => {
+      const saved = useApp.getState().rules[0];
+      expect(saved).toBeTruthy();
+      if (saved!.action.type === "PLAY_AUDIO") expect(saved!.action.assetId).toBe("a2");
+    });
+  });
+
+  it("shows a live JSON preview in Advanced mode (§13)", async () => {
+    const json = () => screen.getByTestId("rule-json");
+    renderPage();
+    expect(screen.queryByTestId("rule-json")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /advanced/i }));
+    expect(json().textContent).toContain('"event": "ROUND_WIN"');
+    expect(json().textContent).toContain('"cooldownMs": 8000');
+
+    // The preview tracks builder edits in real time (event → ROUND_LOSS).
+    await userEvent.selectOptions(selects()[1], "ROUND_LOSS");
+    expect(json().textContent).toContain('"event": "ROUND_LOSS"');
   });
 
   it("includes an added IF condition in the saved rule", async () => {
